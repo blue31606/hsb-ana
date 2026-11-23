@@ -81,7 +81,3 @@ Ethernet + IPv4 + UDP + BTH + AETH（+ ICRC）。MAC、IP 對調；UDP 埠**不*
 2. **錯誤注入的註解與程式不符。** 註解寫「每個序列第 8 個封包注入」，程式是 8-bit `err_cnt == '1`，也就是第 256 個（[L385](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L385)）。
 3. **PSN 比較沒有處理回捲。** `psn > psn_exp` 是 24-bit 無號比較。`psn_exp` 接近 `0xFFFFFF` 時遺失封包，下一個封包的 PSN 回捲到小值，會被當成重複而不是失序，不送 NAK（推斷）。
 4. 錯誤 FIFO 每個封包都寫一筆（包括非 STX 封包），所以 `ENABLE_ROCE_ACK` 時 `rx_parser` 的讀出也要等它（`!ack_empty`）。
-
-## 與 1722 Listener 的關係
-
-1722 沒有 ACK/重送機制，`roce_ack` 不適用。但它示範了**怎麼把 `tx_stream_buffer` 的狀態回饋到 RX 端**：1722 Listener 如果需要在 buffer 快滿時採取動作（例如丟掉整個 frame 而不是半個），可以參考同樣的 `i_stx_ready` 接法。

@@ -93,7 +93,7 @@ flowchart TB
 
 ### 1. Header 攤平
 
-[`axis_to_vec`](lib_axis.md#axis_to_vec)（[L216](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/rx_parser/rx_parser.sv#L216)）把前 `HDR_BYTES` byte 收進暫存器，收滿（或封包提早結束）時 `hdr_valid` 脈衝一拍。`i_done` 綁 1，`o_axis_rx_tready` 沒接，所以它不會影響資料流。
+[`axis_to_vec`](lib.md#axis_to_vec)（[L216](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/rx_parser/rx_parser.sv#L216)）把前 `HDR_BYTES` byte 收進暫存器，收滿（或封包提早結束）時 `hdr_valid` 脈衝一拍。`i_done` 綁 1，`o_axis_rx_tready` 沒接，所以它不會影響資料流。
 
 64-bit 匯流排時，58 byte 需要 8 個 beat，`hdr_valid` 在第 8 個 beat 的下一拍出現。
 
@@ -155,7 +155,7 @@ bth_tx_opcode_match <= (opcode_is_uc && opcode_is_send)
 
 ### 5. Store-and-forward 與讀出
 
-`u_axis_inp_buffer`（[L672–L700](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/rx_parser/rx_parser.sv#L672-L700)）是 [`axis_buffer`](lib_axis.md#axis_buffer)，`WAIT2SEND = 1`（整包收完才放行）、`NO_BACKPRESSURE = 1`（永遠接收）。
+`u_axis_inp_buffer`（[L672–L700](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/rx_parser/rx_parser.sv#L672-L700)）是 [`axis_buffer`](lib.md#axis_buffer)，`WAIT2SEND = 1`（整包收完才放行）、`NO_BACKPRESSURE = 1`（永遠接收）。
 
 讀出控制（[L712–L737](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/rx_parser/rx_parser.sv#L712-L737)）：
 
@@ -238,13 +238,13 @@ Reset 值來自 [`RST_VAL`（L164）](https://github.com/nvidia-holoscan/holosca
 5. **輸入 FIFO 溢位行為。** `NO_BACKPRESSURE = 1` 時，`sc_fifo` 滿了會直接丟掉 beat（`wr_en = wr & ~full`），不是整包丟棄。被丟掉的若是 `tlast` beat，封包邊界會錯位（推斷，需模擬確認）。正常情況下 FIFO 只需容納約 2 個封包，所以只有讀出長時間停滯（例如 Bridge 背壓）才可能發生。
 6. **Metadata FIFO 比資料 FIFO 先滿。** `META_FIFO_DEPTH = 31` 筆，資料 FIFO 可容納的最小封包數（2 × 4096 / 64 = 128）比它多。大量連續最小封包時，若讀出比進來慢，metadata 會先溢位（推斷）。以 64-bit 匯流排估算：每個封包讀出額外約 2 拍，進來時 IFG + preamble 約 2.5 拍，餘裕很小。
 
-## 與 1722 Listener 的關係
+## 不屬於 HSB 的流量
 
-1722 封包（EtherType 0x22F0，沒有 IP/UDP）進來時：
+`rx_parser` 只認得 ARP、BOOTP、PTP、ECB（UDP 8192）、RoCEv2（UDP 4791）。其他封包（例如未知 EtherType 或未知 UDP 埠）的結果：
 
 | dest MAC | 結果 |
 |---|---|
-| 本機 unicast | 所有旗標 0 → 丟棄 |
-| Multicast（例如 `91:E0:F0:xx:xx:xx`） | `is_btx = 1` → 非 Bridge 模式下 `brx_axis_tready` 綁 1 → 丟棄 |
+| 本機 unicast | 所有分類旗標為 0 → 丟棄 |
+| Broadcast / multicast | `is_btx = 1`；非 Bridge 模式下 `brx_axis_tready` 固定為 1 → 丟棄；Bridge 模式下交給 `bridge_pkt_proc` |
 
-改法見 [design/1722-listener.md §4.1–4.3](../../design/1722-listener.md#41-rx_parser分類)。要動的地方：分類（§3）、`hdr_din` 與 `tuser` 格式（§6）、新增輸出埠。`HDR_BYTES = 58` 已經涵蓋 1722B CoE header（46 byte，加 VLAN 50 byte）。
+`HDR_BYTES = 58` 可容納 Ethernet + VLAN + IPv4 + UDP + BTH + RETH，以及 1722B CoE header（46 byte，含 VLAN 50 byte）。

@@ -54,7 +54,7 @@ flowchart LR
 
 ### 2. 去 header
 
-[`axis_drop`](lib_axis.md#axis_drop)（[L77–L96](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv#L77-L96)），`DROP_WIDTH = 54 × 8 = 432`。以 64-bit 為例：
+[`axis_drop`](lib.md#axis_drop)（[L77–L96](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv#L77-L96)），`DROP_WIDTH = 54 × 8 = 432`。以 64-bit 為例：
 
 - `DROP_CYCLES = 7`、`VAL_BITS = 432 mod 64 = 48`。
 - 前 6 個 beat 整個丟掉；第 7 個 beat 的前 6 byte 是 header，後 2 byte 是 payload。
@@ -64,7 +64,7 @@ flowchart LR
 
 ### 3. 去 ICRC
 
-[`axis_drop_tail`](lib_axis.md#axis_drop_tail)（[L99–L116](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv#L99-L116)），去掉最後 4 byte。它是 `DROP_CYCLES = 2` 級的延遲線：看到 `tlast` 後回頭調整最後 1～2 個 beat 的 `tkeep` / `tlast`。如果最後一個 beat 只剩 ICRC，那個 beat 整個不送，`tlast` 提早到前一個 beat。
+[`axis_drop_tail`](lib.md#axis_drop_tail)（[L99–L116](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv#L99-L116)），去掉最後 4 byte。它是 `DROP_CYCLES = 2` 級的延遲線：看到 `tlast` 後回頭調整最後 1～2 個 beat 的 `tkeep` / `tlast`。如果最後一個 beat 只剩 ICRC，那個 beat 整個不送，`tlast` 提早到前一個 beat。
 
 ### 4. Demux
 
@@ -97,15 +97,3 @@ for (int j=0; j<NUM_HOST; j=j+1) begin
 2. 感測器選擇的位元範圍和 `roce_ack` 不同，見 [roce_ack 注意事項 1](roce_ack.md#注意事項)。
 3. 整條路徑沒有 `tready`。下游只能靠 `tx_stream_buffer` 的 FIFO 吸收，滿了就遺失資料。
 4. 輸出只保留 Ethernet 封包邊界（`tlast`）。frame、line 等資訊必須在 payload 裡。
-
-## 與 1722 Listener 的關係
-
-這個模組的三個核心動作都是 RoCE 專用：
-
-| 動作 | 1722 需要的改法 |
-|---|---|
-| 去 54 byte | 改成 Ethernet 14 byte + AVTPDU header。HSB 的 1722B CoE 格式是 14 + 32 = 46 byte |
-| 去 4 byte ICRC | 1722 沒有 ICRC，不要去 |
-| 用 `QP[8:1]` 選感測器 | 改用 stream_id、`channel_number` 或 `image_sensor_id` |
-
-建議不要改這個模組，而是另寫一個 `avtp_listener` 平行處理 1722 流量，兩者在 `tx_stream_buffer` 前合併。見 [design/1722-listener.md](../../design/1722-listener.md)。可以直接沿用的元件：`axis_drop`（改 `DROP_WIDTH`）、「先把目的地放進 `tuser` 再處理」的做法。

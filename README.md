@@ -1,8 +1,6 @@
 # hsb-ana — NVIDIA Holoscan Sensor Bridge FPGA IP 分析
 
-本 repo 分析 NVIDIA Holoscan Sensor Bridge（HSB）的 FPGA IP（`fpga/nv_hsb_ip`）。目標是把 HSB 的 Ethernet RX 路徑改成 IEEE 1722（AVTP）Listener，把收到的資料送到 MIPI CSI-2 TX。
-
-分析重點因此放在 **Ethernet → Sensor TX** 這條路徑：這條路徑上的模組逐行分析，其他模組只到結構層級。
+本 repo 完整分析 NVIDIA Holoscan Sensor Bridge（HSB）的 FPGA IP（`fpga/nv_hsb_ip`），涵蓋所有子系統、共用元件、參考設計、板級整合與驗證環境。粗看用方塊圖（block view），細看用 RTL 逐段說明，每項說明都附固定 commit 的原始碼行號連結。
 
 ## 分析基準
 
@@ -12,56 +10,58 @@
 | 版本 | 3.0.0 |
 | Commit | [`41cecaa`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/tree/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8)（2026-11-09） |
 | IP 版本常數 | `HOLOLINK_REV = 16'h2609` |
-| 參考板級設定 | Lattice CPNX100（`fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/HOLOLINK_def.svh`） |
+| 參數舉例用的板級 | Lattice CPNX100（各板級比較見 [boards](docs/boards.md)） |
 
 文件中所有原始碼連結都固定在這個 commit，上游更新後連結不會失效。
 
 ## 閱讀順序
 
-1. **[架構總覽](docs/architecture/overview.md)**：頂層方塊圖、時脈域、資料路徑、位址空間、開機流程。
-2. **Listener 路徑模組**（依資料流順序，逐行分析）：
+1. **[架構總覽](docs/architecture/overview.md)**：頂層方塊圖、時脈域、編譯參數、資料路徑、`eth_pkt` 優先權、位址空間、開機流程。
+2. **子系統**：
 
-   | 順序 | 模組 | 功能 |
-   |---|---|---|
-   | 1 | [`rx_parser`](docs/modules/rx_parser.md) | Header 解析、分類、store-and-forward、VLAN 移除 |
-   | 2 | [`roce_ack`](docs/modules/roce_ack.md) | RoCE RC 的 PSN 檢查、ACK/NAK、背壓 |
-   | 3 | [`sensor_tx_pkt_proc`](docs/modules/sensor_tx_pkt_proc.md) | 去 header、依 QP 選感測器 |
-   | 4 | [`tx_stream_buffer`](docs/modules/tx_stream_buffer.md) | 雙時脈 FIFO、預填、PAUSE（含 `axis_buffer_tx`、`pause_gen`） |
-   | 5 | [`eth_pkt`](docs/modules/eth_pkt.md) | TX 仲裁、VLAN 插入、MAC 逾時 |
+   | 子系統 | 文件 | 模組 | 分析深度 |
+   |---|---|---|---|
+   | Host RX | [`rx_parser`](docs/modules/rx_parser.md) | Header 解析、分類、store-and-forward、VLAN 移除 | 逐行 |
+   | Host TX | [`eth_pkt`](docs/modules/eth_pkt.md) | 6 埠優先權仲裁、VLAN 插入、MAC 逾時 | 逐行 |
+   | 控制平面 | [`rx_ls_parser`](docs/modules/rx_ls_parser.md) | LS 分派、ECB 協定、BOOTP enumeration、ARP / Ping | 主要邏輯 |
+   | 控制平面 | [APB 匯流排](docs/modules/apb.md) | 解碼樹、`apb_switch`、watchdog、`s_apb_reg` CDC | 主要邏輯 |
+   | 控制平面 | [事件與序列器](docs/modules/event.md) | 事件向量、中斷封包、暫存器序列器 | 主要邏輯 |
+   | Data Plane（Sensor → Host） | [`packetizer`](docs/modules/packetizer.md) | bypass / 可程式化 / 固定 pattern、Virtual Port | 主要邏輯 |
+   | Data Plane | [`dp_pkt_top`](docs/modules/dp_pkt_top.md) | VP 仲裁、設定 RAM、RoCEv2 WRITE、metadata、1722B CoE | 主要邏輯 |
+   | Data Plane | [`data_gen` / `ram_player`](docs/modules/data_gen.md) | 測試資料產生 | 主要邏輯 |
+   | Sensor TX（Host → Sensor） | [`sensor_tx_pkt_proc`](docs/modules/sensor_tx_pkt_proc.md) | 去 header / ICRC、依 QP 分流 | 逐行 |
+   | Sensor TX | [`tx_stream_buffer`](docs/modules/tx_stream_buffer.md) | 雙時脈 FIFO、預填、PAUSE（含 `pause_gen`） | 逐行 |
+   | RoCE | [`roce_ack`](docs/modules/roce_ack.md) | RC 的 PSN 檢查、ACK / NAK | 逐行 |
+   | RoCE | [`roce_icrc` / `lfsr_hc`](docs/modules/roce.md) | ICRC 計算 | 主要邏輯 |
+   | 時間同步 | [PTP](docs/modules/ptp.md) | 1588 E2E / gPTP / P2P、時間戳、DPLL、計時器 | 主要邏輯 |
+   | 開機 | [開機與 reset](docs/modules/boot_and_reset.md) | `reset_gen`、`sys_init`、`eeprom_info`、`glb_ctrl_top` | 主要邏輯 |
+   | 周邊 | [I2C / SPI / UART / GPIO](docs/modules/peripherals.md) | 匯流排多工、暫存器 | 暫存器層級 |
+   | Bridge | [Bridge 模式](docs/modules/bridge.md) | `routing_table`、`bridge_pkt_proc`、透明時鐘 | 主要邏輯 |
+   | 共用 | [`lib_axis` / `misc`](docs/modules/lib.md) | 39 個元件目錄、CDC 元件 | 目錄 + 重點元件 |
+   | 參考設計 | [`ref_design`](docs/modules/ref_design.md) | `vsync_gen`、`delayed_io`、`i2s_top`、`imu_top` | 介面層級 |
 
-3. **其他模組**：
-
-   | 模組 | 深度 |
-   |---|---|
-   | [`rx_ls_parser` / `ecb_rdwr_ctrl`](docs/modules/rx_ls_parser.md) | 主要邏輯 |
-   | [`dp_pkt_top`（含 1722B Talker）](docs/modules/dp_pkt_top.md) | 主要邏輯 |
-   | [`lib_axis` 共用元件](docs/modules/lib_axis.md) | 修改 Listener 時會用到的元件 |
-   | [其他模組](docs/modules/others.md) | 結構層級 |
-
+3. **整合與驗證**：
+   - [板級整合](docs/boards.md)：6 個板級的設定比較與共通整合模式。
+   - [驗證環境](docs/testbench.md)：`nv_hsb_ip_simple_tb` 的組成與測試模式。
 4. **參考資料**：
    - [暫存器表](docs/registers/regmap.md)（由 `tools/gen_regmap.py` 自動產生）
    - [位址空間與 RAM](docs/registers/memory-map.md)
    - [時序圖](docs/timing/)
+5. **[驗證狀態](VERIFICATION.md)**：每項結論是怎麼確認的、原始碼中的不一致與可能的問題。
 
-5. **設計提案**：[1722 Listener 整合設計](design/1722-listener.md)
-
-6. **[驗證狀態](VERIFICATION.md)**：每項結論是怎麼確認的、哪些還沒確認。
+分析深度：**逐行** = 每個 always / assign 都讀過；**主要邏輯** = FSM、資料格式、暫存器都讀過，輔助邏輯略讀；**介面 / 暫存器層級** = 只讀介面、暫存器與註解。
 
 ## 模組文件格式
 
-每份模組文件都用同一個章節順序：
-
 | 章節 | 內容 |
 |---|---|
-| 概要 | 一句話功能、原始碼連結、分析深度 |
-| 參數 | parameter / localparam |
-| 介面 | port 表 |
+| 概要 | 功能、原始碼連結、分析深度 |
+| 參數 / 介面 | parameter、port 表 |
 | 內部結構 | Mermaid 方塊圖 |
 | 行為 | 依處理順序說明，附原始碼行號 |
 | 時序 | 時序圖（如果有） |
 | 暫存器 | 暫存器表 |
 | 注意事項 | 限制、原始碼的不一致、可能的問題 |
-| 與 1722 Listener 的關係 | 整合時要改什麼 |
 
 ## 工具
 
@@ -89,11 +89,14 @@ python3 tools/wave.py docs/timing/*.wave.json
 | LS | Low Speed。控制封包（ECB、BOOTP、ARP、Ping、Loopback）走的 8-bit 路徑 |
 | ECB | HSB 的暫存器讀寫協定（UDP 8192） |
 | VP | Virtual Port。packetizer 拆出的子串流 |
-| CoE | Camera over Ethernet。HSB 用 IEEE 1722B 實作的資料格式 |
+| CoE | Camera over Ethernet。HSB 用 IEEE 1722B 實作的 Data Plane 格式 |
+| QP / PSN | RoCE 的 Queue Pair 編號 / 封包序號 |
+| DPLL | PTP 用來調整本地計時器頻率的數位鎖相迴路 |
 
 ## 版本紀錄
 
 | 版本 | Commit | 說明 |
 |---|---|---|
 | v1 | `2a6cf26` | 依資料路徑分章的第一版 |
-| v2 | 目前版本 | 改為每個模組一份文件；Listener 路徑逐行分析；加入時序圖、permalink、自動產生的暫存器表、驗證狀態；設計提案移到 `design/` |
+| v2 | `0158d91` | 每個模組一份文件；加入時序圖、permalink、自動產生的暫存器表、驗證狀態 |
+| v3 | 目前版本 | 改為完整、中立的全 IP 分析：新增 PTP、packetizer、事件、APB、開機、周邊、Bridge、RoCE、共用元件、參考設計、板級、驗證環境等文件；`dp_pkt_top`、`rx_ls_parser` 重寫為主要邏輯深度；移除特定應用的設計提案 |

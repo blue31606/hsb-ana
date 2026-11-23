@@ -61,5 +61,5 @@ flowchart TB
 |---|---|
 | `tx_stream_buffer` | 5 ctrl / 3 stat，見 [tx_stream_buffer.md §暫存器](../modules/tx_stream_buffer.md#暫存器) |
 | `roce_ack` | 使用 `inst_dec_ack_ctrl`，位元見 [roce_ack.md §暫存器](../modules/roce_ack.md#暫存器) |
-| Data Plane 設定 RAM | 見 [dp_pkt_top.md §1](../modules/dp_pkt_top.md#1-設定-ram) |
+| Data Plane 設定 RAM | 見 [dp_pkt_top.md §2](../modules/dp_pkt_top.md#2-設定-ram) |
 | 周邊（SPI / I2C / UART） | 各模組自己的暫存器，未分析 |

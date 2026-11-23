@@ -174,14 +174,14 @@ host 軟體的用法可以佐證：`jesd.cpp` 寫 `0x0120_0000 = 0x3`（啟用�
 3. **`saw_overflow` 的判斷比實際溢位早一格。** 它看 `buffer_count == FIFO_DEPTH − 1`，而且只在 `afull_seen` 後有效；預填期間就溢位不會被記錄。
 4. **`HALF_SECOND` 計數器（[L98–L114](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/tx_stream_buffer.sv#L98-L114)）產生的 `heartbeat` 沒有被使用。** 常數假設 APB 時脈 100 MHz。
 
-## 與 1722 Listener 的關係
+## 參數調整
 
-這個模組可以**直接沿用**。它不認識任何協定，只處理 AXIS 串流。整合時要調整的是：
+這個模組不解析協定，只處理 AXIS 串流，調整重點：
 
-| 項目 | 建議 |
+| 項目 | 說明 |
 |---|---|
-| `FIFO_DEPTH` | 依 MIPI line 長度與 Ethernet 抖動決定。至少要能放下預填量加上一個 line |
-| 預填門檻 | MIPI TX 一旦開始送 line 就不能中斷。預填量要大於「最長的 Ethernet 到達間隔 × SIF 輸出速率」 |
-| `pause_ena` | TSN/AVB 網路一般不用 PAUSE，建議 0 |
-| `tuser` | 目前 1 bit。要帶 frame/line 資訊時，加寬 `W_USER` 或改用 in-band 描述字（見設計文件） |
-| 監控 | `saw_underflow`、`low_watermark` 直接反映 Ethernet 供應是否足夠 |
+| `FIFO_DEPTH` | 依下游一次不可中斷的傳輸長度與 Ethernet 抖動決定，至少要放得下預填量加上一次完整傳輸 |
+| 預填門檻 | 下游一旦開始就不能中斷時，預填量要大於「最長 Ethernet 到達間隔 × SIF 輸出速率」 |
+| `pause_ena` | 網路不使用 PAUSE 時設 0 |
+| `tuser` | 目前 1 bit；要帶更多旁帶資訊需加寬 `W_USER` |
+| 監控 | `saw_underflow`、`low_watermark` 反映 Ethernet 供應是否足夠 |

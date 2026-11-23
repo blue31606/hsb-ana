@@ -46,7 +46,7 @@ flowchart LR
     APB["apb_intc_top<br/>APB interconnect"]
   end
 
-  subgraph STX["Sensor TX 路徑（Listener 改造對象）"]
+  subgraph STX["Sensor TX 路徑（Host → 感測器）"]
     STXP["sensor_tx_pkt_proc<br/>去 header・依 QP 分流"]
     TSB["tx_stream_buffer × N<br/>雙時脈 FIFO・預填・PAUSE"]
     PG["pause_gen（每個 host 埠）<br/>802.3x PAUSE"]
@@ -78,7 +78,7 @@ flowchart LR
 
 ## 3. 時脈域
 
-| 時脈 | 用途 | CPNX100 |
+| 時脈 | 用途 | CPNX100（其他板級見 [boards](../boards.md)） |
 |---|---|---|
 | `i_hif_clk` | Host 資料路徑：`rx_parser`、`eth_pkt`、`dp_pkt_top`、`sensor_tx_pkt_proc`、`tx_stream_buffer` 寫入端 | 156.25 MHz（10G，64-bit） |
 | `i_apb_clk` | 暫存器、`sys_init`、`eeprom_info`、I2C/SPI/UART | 19.53125 MHz |
@@ -98,7 +98,7 @@ flowchart LR
 
 ## 4. 編譯參數（`HOLOLINK_def.svh`）
 
-| Define / 參數 | 意義 | CPNX100 |
+| Define / 參數 | 意義 | CPNX100（其他板級見 [boards](../boards.md)） |
 |---|---|---|
 | `HOST_IF_INST` | Host（Ethernet）埠數 | 2 |
 | `HOST_WIDTH` | HIF AXIS 寬度 | 64 |
@@ -125,14 +125,16 @@ flowchart LR
 | `SIF_TX_ROCE_RC_ENABLE` | `rx_parser` 實例化 `roce_ack`，接受 RC SEND/WRITE |
 | `SYNC_CLK_HIF_APB` / `SYNC_CLK_HIF_PTP` | 宣告兩個時脈同源，省略同步器 |
 
-## 5. 四條資料路徑
+## 5. 資料路徑
 
 | 路徑 | 模組鏈 | 文件 |
 |---|---|---|
-| Host RX → 控制平面 | `rx_parser` → `rx_ls_parser`（ECB/BOOTP/ARP/Ping/Loopback）→ `eth_pkt` 第 3 埠 | [rx_ls_parser](../modules/rx_ls_parser.md) |
+| Host RX → 控制平面 | `rx_parser` → `rx_ls_parser`（ECB/BOOTP/ARP/Ping/Loopback）→ `eth_pkt` 第 3 埠；ECB → APB | [rx_ls_parser](../modules/rx_ls_parser.md)、[apb](../modules/apb.md) |
 | Host RX → Sensor TX | `rx_parser` → `sensor_tx_pkt_proc` → `tx_stream_buffer[i]` → `o_sif_axis_*[i]` | [rx_parser](../modules/rx_parser.md)、[sensor_tx_pkt_proc](../modules/sensor_tx_pkt_proc.md)、[tx_stream_buffer](../modules/tx_stream_buffer.md) |
-| Sensor RX → Host | `packetizer_top[n]` → `dp_pkt_top` → `eth_pkt` 第 0 埠 | [dp_pkt_top](../modules/dp_pkt_top.md) |
-| PTP | `rx_parser` → `ptp_top` → `eth_pkt` 第 1 埠（只有 host 埠 0） | [others §PTP](../modules/others.md#ptp_top) |
+| Sensor RX → Host | `packetizer_top[n]` → `dp_pkt_top` → `eth_pkt` 第 0 埠 | [packetizer](../modules/packetizer.md)、[dp_pkt_top](../modules/dp_pkt_top.md) |
+| PTP | `rx_parser` → `ptp_top` → `eth_pkt` 第 1 埠（只有 host 埠 0） | [ptp](../modules/ptp.md) |
+| 事件 → Host | `i_sif_event` 等 → `ctrl_bus_evt_int` → 中斷封包 / 暫存器序列 | [event](../modules/event.md) |
+| Bridge（`BRIDGE_IF_INST`） | `rx_parser` ↔ `bridge_pkt_proc` ↔ SIF | [bridge](../modules/bridge.md) |
 
 ## 6. `eth_pkt` 輸入埠分配
 
@@ -174,6 +176,8 @@ APB master 有 4 個：
 
 ## 8. 開機與初始化
 
+詳見 [boot_and_reset](../modules/boot_and_reset.md)。
+
 ```mermaid
 sequenceDiagram
   participant RST as reset_gen
@@ -199,6 +203,8 @@ sequenceDiagram
 
 ## 9. Reset 與軟體控制
 
+詳見 [boot_and_reset §glb_ctrl_top](../modules/boot_and_reset.md#glb_ctrl_top)。
+
 - `o_sw_sys_rst = hsb_ctrl[3]`：軟體系統 reset，回接 `reset_gen.i_cfg_rst`（[L801](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L801)）。
 - `o_sw_sen_rst = ~hsb_ctrl[63:32]`：32 個感測器 reset 給板級（[L800](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L800)）。
 
@@ -208,4 +214,4 @@ sequenceDiagram
 event_vec = { i_sif_event[15:0], 11'h0, uart_irq, 2'b00(內部), spi_busy, i2c_busy }
 ```
 
-（[L528](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L528)）板級可以用 `i_sif_event` 把感測器事件送給 host。
+詳見 [event](../modules/event.md)。（[L528](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L528)）板級可以用 `i_sif_event` 把感測器事件送給 host。

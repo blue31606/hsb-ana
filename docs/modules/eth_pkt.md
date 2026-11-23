@@ -96,7 +96,3 @@ assign ins_vlan        = reg_axis_tuser[16];
 
 1. `HOLOLINK_top.sv` 的埠號註解與實際順序不一致，見 [overview §6](../architecture/overview.md#6-eth_pkt-輸入埠分配)。
 2. 逾時丟棄是「倒掉直到恢復」，不是整包丟。恢復的那一刻 MAC 可能收到半個封包（推斷）。
-
-## 與 1722 Listener 的關係
-
-Listener 是 RX 方向，不經過 `eth_pkt`。如果 Listener 要回送任何封包（例如 1722 的 AECP/ACMP 控制回應），就要在這裡新增一個輸入埠，並決定它的優先權。
