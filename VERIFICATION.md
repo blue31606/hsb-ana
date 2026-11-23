@@ -1,6 +1,6 @@
 # 驗證狀態
 
-本文件記錄每類結論是怎麼確認的。**所有結論都沒有經過模擬或硬體驗證**：分析環境沒有 HDL 模擬器（VCS / Xcelium / Questa / Verilator / Icarus 都沒有），也無法安裝。
+本文件記錄每類結論是怎麼確認的。**所有結論都沒有經過模擬或硬體驗證**：分析環境沒有 HDL 模擬器（VCS / Xcelium / Questa / Verilator / Icarus 都沒有），也無法安裝。可以計算的部分（checksum、CRC、排程、版面）改用 Python 重寫 RTL 運算做數值比對（方法 **N**）。v6 另外請一個獨立的 agent 逐項對照 RTL 稽核全部文件，找到的 33 項逐一對照 RTL 確認：31 項已修正，2 項（`roce_ack` QP RAM 越界、Bridge 學習請求遺失）無法完全確認，在文件中標為待確認。
 
 ## 確認方法
 
@@ -10,6 +10,7 @@
 | **X** | RTL 與 host 軟體（`src/hololink/core/*.cpp/.hpp`）交叉比對 | 很高：兩邊獨立寫成，互相一致 |
 | **A** | `tools/gen_regmap.py` 自動解析 | 很高（對 `regmap_pkg.sv` 的內容而言） |
 | **I** | 推斷：從結構或部分程式碼推論，沒有逐行追完 | 中；文件中標「推斷」 |
+| **N** | 數值驗證：`tools/verify/verify_calcs.py` 照 RTL 重寫運算，與獨立參考實作比對（[結果](docs/verification-calcs.md)） | 很高（只限運算本身，不含時序） |
 
 ## 架構與位址
 
@@ -34,7 +35,7 @@
 | ECB 命令 0x04 / 0x09 / 0x14 / 0x19 與回應碼 | R + X | [rx_ls_parser §ECB](docs/modules/rx_ls_parser.md#ecb_rdwr_ctrlecb-協定) |
 | BOOTP 用 UDP 12268 → 12267、vendor tag 0xE0「NVDA」、IP 取自 `yiaddr` | R + X | [rx_ls_parser §bootp](docs/modules/rx_ls_parser.md#bootp) |
 | PTP profile（E2E / gPTP / P2P）、首次同步直接設定計時器、DPLL 為 PI 迴路 | R + X | [ptp](docs/modules/ptp.md) |
-| IPv4 checksum 常數 `0xC52D` = 固定欄位和 + 28 | R（手算驗證） | [dp_pkt_top §7](docs/modules/dp_pkt_top.md#7-rocev2-header) |
+| IPv4 checksum 常數 `0xC52D` = 固定欄位和 + 28 | R + N（20000 組隨機 header） | [dp_pkt_top §7](docs/modules/dp_pkt_top.md#7-rocev2-header) |
 | RoCE header 長 70 byte、metadata 封包 202 byte、CoE metadata 174 byte、各 HIF 寬度的拍數 | R | [dp_pkt_top §9–§10](docs/modules/dp_pkt_top.md#9-metadata-封包) |
 | packetizer RAM 配置 `[CLEAR][SORT][VP]`、`pack_ram_addr = (RAM 編號 << 4) | 列` | R + X（testbench `pack_vp_ram_index()`） | [packetizer §4](docs/modules/packetizer.md#4-可程式化資料路徑packetizersv) |
 | host RAW10 / RAW12 排程 `0x11F1FFF7` / `0x11210007` 的解碼 | R + X（`packetizer_program.cpp`） | [packetizer §8](docs/modules/packetizer.md#8-host-軟體的排程交叉比對) |
@@ -46,9 +47,9 @@
 | 全部跨時脈點與使用的同步元件 | R | [overview §跨時脈地圖](docs/architecture/overview.md#跨時脈地圖)、[lib §CDC 元件](docs/modules/lib.md#cdc-元件) |
 | ECB 寫入沒有 `ACK_REQUEST` 時不回應；回應尾端帶 2 byte sequence；N ≤ 1 時補到 18 byte | R + X（host 一律設 `ACK_REQUEST`） | [rx_ls_parser §回應格式](docs/modules/rx_ls_parser.md#回應格式) |
 | RoCE-ECB 回應是 RDMA WRITE with Immediate（0x2B） | R | 同上 |
-| `roce_icrc` 支援的最後一拍長度剛好涵蓋 HSB 產生的所有 RoCE 封包；`lfsr_hc` 只有特定寬度有方程式 | R | [roce](docs/modules/roce.md) |
+| `roce_icrc` 支援的最後一拍長度剛好涵蓋 HSB 產生的所有 RoCE 封包；`lfsr_hc` 只有特定寬度有方程式；8-bit 方程式等於反射 CRC-32 | R + N | [roce](docs/modules/roce.md) |
 | reset 串接：HIF / PTP / SIF reset 都以 APB reset 為來源；軟體 reset 自我清除 | R | [boot_and_reset §reset_gen](docs/modules/boot_and_reset.md#reset_gen) |
-| EEPROM 每次讀 32 byte、共 8 次；CRC 多項式實為 0x31（反射 0x8C） | R + X（`eeprom_utility.py`、testbench 註解） | [boot_and_reset §eeprom_info](docs/modules/boot_and_reset.md#eeprom_info) |
+| EEPROM 每次讀 32 byte、共 8 次；CRC 多項式實為 0x31（反射 0x8C） | R + X + N（check 值 0xA1） | [boot_and_reset §eeprom_info](docs/modules/boot_and_reset.md#eeprom_info) |
 | Bridge 的 correctionField 位置是 byte 22–27（Layer 2 PTP） | R | [bridge §PTP 透明時鐘](docs/modules/bridge.md#ptp-透明時鐘) |
 | 事件序列器指令格式（POLL / WRITE / READ / NOP），RAM 在 `0x2000` | R + X | [event](docs/modules/event.md) |
 | EEPROM 版面、預設 MAC `CA:FE:C0:FF:EE:00`、I2C 位址 0x50 | R | [boot_and_reset](docs/modules/boot_and_reset.md) |
@@ -67,7 +68,7 @@
 | `eth_pkt` 逾時恢復時 MAC 可能收到半個封包 | I | [eth_pkt 注意事項](docs/modules/eth_pkt.md#注意事項) |
 | `dp_pkt_len` reset 值只用低 8 bit，必須由軟體設定 | R | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
 | `dpll.sv` 增益註解與實際（暫存器決定）不符；offset 只取 24 bit；Delay 量測與 Sync 之間沒有配對 | R | [ptp 注意事項](docs/modules/ptp.md#注意事項) |
-| PTP 沒有 BMCA、忽略 Announce；correctionField 以無號 24 bit 處理；不支援 one-step Pdelay_Resp；秒只有 32 bit | R | [ptp 注意事項](docs/modules/ptp.md#注意事項) |
+| PTP 沒有 BMCA、忽略 Announce；correctionField 只用 24 bit（mod 2²⁴，負值正確、超過 ±8.4 ms 回捲）；不支援 one-step Pdelay_Resp；秒只有 32 bit | R | [ptp 注意事項](docs/modules/ptp.md#注意事項) |
 | packetizer `latency ≥ 9` 時 FSM 卡死（`latency_cnt` 只有 3 bit）；`PACK_DELAY` 是死碼；串流中寫 RAM 會打亂排程；`last_buf` 只看 VP 0 | R（影響為 I） | [packetizer 注意事項](docs/modules/packetizer.md#注意事項) |
 | `dp_pkt` 不檢查 VP `tvalid`；`ROCE_WR_IMM` 是死碼；`dp_pkt_1722B` 暫存器沒有使用；RTL 檔頭的設定 RAM 註解過時；CoE timestamp 是送出時間 | R | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
 | I2C 10-bit 讀取不符規格；`status[2]` 實為逾時；高 APB 時脈板級上 SCL 超過 400 kHz | R + I | [peripherals 注意事項](docs/modules/peripherals.md#注意事項) |
@@ -75,18 +76,22 @@
 | `cam_rcvr` 不能反壓相機，HSB 停止接收約 4 µs 後資料遺失 | R + I | [performance §6](docs/performance.md#6-緩衝與反壓鏈) |
 | buffer 環不能跨 8 GB 邊界；host 預設 MTU 1500 | R + X + I | [flow 注意事項](docs/flow.md#注意事項) |
 | 512-bit HIF、MTU 1500 時 Data Plane 約 80 Gb/s，達不到 100G 線速 | I | [performance §3](docs/performance.md#3-hsb-內部的封包間隔推斷) |
-| `bootp` 的變數 `ciaddr` 實際讀 `yiaddr` | R | [rx_ls_parser 注意事項](docs/modules/rx_ls_parser.md#注意事項) |
 | Bridge 透明時鐘用 OR 而不是加法修正 correctionField；CAM 沒有老化 | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
 | `lib` 中 `axis_demux`、`comparator`、`debouncer`、`str_fwd_fifo` 沒有被引用 | R | [lib](docs/modules/lib.md) |
 | `imu_top` 沒有被任何板級實例化 | R | [ref_design](docs/modules/ref_design.md) |
 | ECB 封包在 pair 中途結束仍執行一次 APB 存取；單組 `WR_BLOCK` 被補齊時可能多寫一次 `glb_scratch` | R + I | [rx_ls_parser 注意事項](docs/modules/rx_ls_parser.md#注意事項) |
 | ECB `cmd_dout` 跨時脈沒有同步器；BOOTP reply 沒有 xid / chaddr 驗證；LS 路徑所有 host 埠共用，會互相阻擋 | R + I | 同上 |
-| `roce_ack`：重複封包不回 ACK；IPv4 checksum 增量更新在借位時差 2；第一個 ACK 的 PSN 為 0 | R + I | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
+| `roce_ack`：重複封包不回 ACK；IPv4 checksum 增量更新在借位時差 2（N）；第一個 ACK 的 PSN 為 0 | R + I + N | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
 | `reg_cdc` 在握手進行中的更新會遺失（HSB 內由 `apb_switch` 的 10 拍延遲避免） | R + I | [lib §reg_cdc](docs/modules/lib.md#reg_cdc) |
 | `streaming_cdc` 讓 HIF 端的 PTP 時間固定晚約 20–40 ns，未補償 | R + I | [lib §streaming_cdc](docs/modules/lib.md#streaming_cdc) |
 | `dc_fifo` 實體深度補到 2 的次方；AUTO RAM 判斷條件前後不一致 | R | [lib §dc_fifo_generic](docs/modules/lib.md#dc_fifo_generic--dc_fifo_stub) |
-| EEPROM 不存在時 MAC 不會保留預設值；EEPROM CRC 檢查與寫入工具不一致且結果未使用 | R + X + I | [boot_and_reset 注意事項](docs/modules/boot_and_reset.md#注意事項) |
+| EEPROM 不存在時 MAC 不會保留預設值；EEPROM CRC 檢查與寫入工具不一致（N：正確映像 99.6 % 判為錯誤）且結果未使用 | R + X + I + N | [boot_and_reset 注意事項](docs/modules/boot_and_reset.md#注意事項) |
 | Bridge：本 repo 沒有板級使用；只支援 Layer 2 PTP；一般 multicast 被丟棄；64-bit 時大於約 1.8 KB 的 host 封包會卡死；host 優先於 SIF | R + I | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
+| SPI 只讀交易與 `turnaround_len` ≥ 33 卡死；UART 接收端連續資料下可能失去同步 | R（UART 為 R + I） | [peripherals 注意事項](docs/modules/peripherals.md#注意事項) |
+| I2S 除數超出範圍時 BCLK 停止；PCM 等同 LJ；RX 聲道沒有標記 | R | [ref_design §i2s_top](docs/modules/ref_design.md#i2s_top) |
+| `ram_player` `timer = 0` 不循環、`window_size < W_KEEP` 沒有 `tlast`、中途停止違反 AXIS | R | [data_gen §ram_player](docs/modules/data_gen.md#ram_player) |
+| Bridge `del_req_val` 用錯 index；CAM 填滿後未命中送往 entry 0 | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
+| 事件序列器 opcode `11` 不是 NOP | R | [event](docs/modules/event.md) |
 
 ## 時序圖
 
@@ -107,10 +112,22 @@
 | ECB `ACK_REQUEST` | v3 寫「host 軟體定義」 | v5：RTL 依此決定寫入命令是否回應 |
 | 頂層方塊圖 | v2–v4 只部分標示實例化次數 | v5：每個模組都標示份數，並列出共用資源對效能的影響 |
 | `hsb_ctrl_1` | v2 未說明極性 | `o_sw_sen_rst = ~hsb_ctrl_1`，實際極性由板級決定 |
+| `dp_pkt_top` §5 單封包 + `md_disable` | v5 寫 `fsm_cnt_max = 7` | v6：18（前一輪必為 metadata，`is_new = 1`） |
+| packetizer `duplicate` | v5 寫「全 1」 | v6：`'b1` = `{select 0, commit 1}`，每個 VP 收到 VP 0 的資料 |
+| Terasic S10 `VP_SIZE` | v5 寫 256 | v6：預設 128（256 只在 `JESD_HIGH_PERF`、1024-bit） |
+| PTP correctionField | v5 寫「無號、負值算錯」 | v6：mod 2²⁴ 運算，負值正確，只有超過 ±8.4 ms 回捲 |
+| ECB `total_pairs` | v5 寫成 N | v6：等於 N − 1，與完成數比較；只用於 RoCE-ECB |
+| BOOTP / EEPROM IP 優先順序 | v5 寫「BOOTP > EEPROM」 | v6：最後發生的事件勝出，同拍才是 BOOTP 優先 |
+| `data_gen` 速率 | v5 寫 `/ 2^17` | v6：`/ 2^16` |
+| `tx_stream_buffer` 容量（performance） | v5 寫 16 KB | v6：4096 × 64 bit = 32 KB |
+| 事件序列器 opcode `11` | v5 寫 NOP | v6：不是空操作，會對 addr 做 POLL |
+| Bridge CAM 未命中 | v5 寫「丟棄」 | v6：CAM 填滿後轉送到 entry 0 的埠 |
+| `eth_pkt` skid 設定 | v5 照抄註解 | v6：依 index 是 DP / PTP / LS |
+| `ram_player` 的 `i_ptp` | v3 推測「在指定 PTP 時間播放」 | v6：把送出時間寫進資料 |
 
 ## 建議的下一步驗證
 
 1. 取得 VCS 或 Xcelium 後，跑 `fpga/nv_hsb_ip_simple_tb`（`make run TEST_MODE=SINGLE_SENSOR|ALL_SENSORS|HOST2SEN`、`make coe`），見 [testbench](docs/testbench.md)。
-2. 針對標「推斷」與「可能的問題」的項目寫定向測試：`rx_parser` 溢位 → metadata FIFO 吞吐量 → `tx_stream_buffer` 預填時序 → PTP offset 回捲 → Bridge correctionField。
+2. 跑 [定向測試計畫](docs/test-plan.md) 的 U1–U3、S1–S7，確認 [問題清單](docs/issues.md) 中標 R / I 的項目；之後再做 `rx_parser` 溢位、metadata FIFO 吞吐量、PTP master 模型等需要長時間或新模型的測試。
 3. 用模擬波形取代 `docs/timing/` 的示意圖（v4 共 5 張）。
 4. 在硬體上量測 [performance](docs/performance.md) 的估算值，特別是 512-bit HIF 的封包間隔。

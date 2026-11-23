@@ -6,7 +6,7 @@
 
 | 項目 | 值 |
 |---|---|
-| 原始碼 | [`sensor_tx/tx_stream_buffer.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/tx_stream_buffer.sv)（372 行）、[`axis_buffer_tx.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/axis_buffer_tx.sv)、[`pause_gen.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/pause_gen.sv) |
+| 原始碼 | [`sensor_tx/tx_stream_buffer.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/tx_stream_buffer.sv)（352 行）、[`axis_buffer_tx.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/axis_buffer_tx.sv)、[`pause_gen.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/pause_gen.sv) |
 | 實例 | [`HOLOLINK_top.sv#L1688`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L1688)（每個 SIF TX）、`pause_gen` 在 [L1740](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L1740)（每個 host 埠） |
 | 時脈 | 寫入 `i_hif_clk`、讀出 `i_sif_clk`、暫存器 `i_apb_clk` |
 | 分析深度 | `tx_stream_buffer` 逐行；`axis_buffer_tx` 讀出控制逐行；`pause_gen` 主要邏輯 |
@@ -122,7 +122,7 @@ assign o_stx_is_ready = !pause;
 - 產生 802.3x PAUSE：dest `01:80:C2:00:00:01`、EtherType `0x8808`、opcode `0x0001`、補到 60 byte（[L53–L57](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/pause_gen.sv#L53-L57)）。
 - `i_start` 期間依 quanta 倒數（每 quanta = 512 bit time，換算成時脈數），倒數完再送一次，維持 pause。
 - `i_start` 從 1 變 0 時送 quanta = 0 的 PAUSE，通知對方恢復。
-- quanta：`ctrl[4]` 沒被寫過時用 `0xFFFF`，寫過後用 `ctrl[4][15:0]`（[L338–L350](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/tx_stream_buffer.sv#L338-L350)）。
+- quanta：`ctrl[4][15:0]` 的值沒有改變過時用 `0xFFFF`（寫入與 reset 值相同的 0 不算改變），寫過後用 `ctrl[4][15:0]`（[L338–L350](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/tx_stream_buffer.sv#L338-L350)）。
 
 ### 6. 統計
 

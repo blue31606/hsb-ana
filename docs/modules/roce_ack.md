@@ -56,7 +56,7 @@
 
 [roce_ack.sv#L219–L253](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L219-L253)：header 解析完（`i_hdr_valid`）時讀狀態 RAM、記下 `pending_*`，但**要等整個封包收完（`i_pkt_done`）才決定**：
 
-- `i_pkt_is_err`（FCS 錯誤等）時不更新狀態、不送回應，只寫一筆錯誤到 FIFO。
+- `i_pkt_is_err`（FCS 錯誤等）時不更新狀態、不送回應，FIFO 照樣寫一筆；寫入的值是 PSN 判斷分支的結果 `pkt_err`，PSN 正確的封包寫入 0，不一定是「錯誤」（[roce_ack.sv#L269–L345](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L269-L345)）。
 - 決定與狀態回寫在同一拍完成（[roce_ack.sv#L256–L358](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L256-L358)）：`sts_ram_wren` 時 RAM 位址切到寫入位址。
 - 狀態 RAM 每筆 50 bit：`[23:0]` 期望 PSN、`[47:24]` MSN、`[48]` 已送過 NAK、`[49]` 已初始化。`N_QP` 筆，用分散式 RAM，reset 清 0。
 
@@ -75,7 +75,7 @@ NAK 只送一次：送出 NAK 或 RNR NAK 後設 `has_nacked`，之後同一個 
 | | src / dest IP | 對調 |
 | UDP | 埠 | **不對調**（兩邊都是 4791）；checksum 0 |
 | BTH | opcode | `0x11`（RC Acknowledge） |
-| | dest QP | QP RAM（`0x0000_3000` 起，每個 SIF 一個 word）的 `[23:0]`：host 端 QP |
+| | dest QP | QP RAM（`0x0000_3000` 起）的 `[23:0]`：host 端 QP。`u_host_qp_ram` 固定 `R_CTRL = 2`、`R_TOTL = 8`，與 `N_QP` 無關，SIF TX 編號 ≥ 2 時的行為取決於 `s_apb_ram` 的越界處理，未追蹤（[roce_ack.sv#L549–L552](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L549-L552)；v6 稽核提出，待確認） |
 | | PSN | 狀態 RAM 中的期望 PSN：ACK 時等於被確認封包的 PSN；NAK 時是 HSB 期望的下一個 PSN |
 | AETH | syndrome | 見下表 |
 | | MSN | 更新後的 MSN（每個 `*_LAST` / `*_ONLY` 封包加 1） |
@@ -102,9 +102,9 @@ NAK 只送一次：送出 NAK 或 RNR NAK 後設 `has_nacked`，之後同一個 
 ## 注意事項
 
 1. **兩處感測器選擇的位元範圍不同。** `roce_ack` 用 `dest_qp[7:1] - 1`，`sensor_tx_pkt_proc` 用 `dest_qp[8:1] == i + 1`。QP < 256 時結果相同；QP bit 8 為 1 時兩者不一致。
-2. **錯誤注入的註解與程式不符。** 註解寫「每個序列第 8 個封包注入」，程式是 8-bit `err_cnt == '1`，也就是第 256 個（[L385](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L385)）。
+2. **錯誤注入的註解與程式不符。** 註解寫「每個序列第 8 個封包注入」，程式是 8-bit `err_cnt == '1`；序列的第一個封包只清除計數、不計入，所以是第 257 個（[L385](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L385)）。
 3. **PSN 比較沒有處理回捲。** `psn > psn_exp` 是 24-bit 無號比較。`psn_exp` 接近 `0xFFFFFF` 時遺失封包，下一個封包的 PSN 回捲到小值，會被當成重複而不是失序，不送 NAK（推斷）。
 4. 錯誤 FIFO 每個封包都寫一筆（包括非 STX 封包），所以 `ENABLE_ROCE_ACK` 時 `rx_parser` 的讀出也要等它（`!ack_empty`）。
 5. **重複封包沒有回應。** `psn < psn_exp` 時只丟包，不送 ACK。InfiniBand 規格要求 responder 對重複的請求回 ACK，讓 requester 在 ACK 遺失時能前進；這裡如果某個 ACK 在網路上遺失，requester 重送的封包都會被當成重複而丟掉，requester 只能等到重試次數用完（推斷）。
-6. **IPv4 checksum 增量更新在借位時差 2。** 計算是 17 bit 二補數 `checksum + old_len − 48`，再把 bit 16 加回來。結果為負時正確做法是減 1，這裡卻加 1。只在 `checksum + old_len < 48` 時發生（請求封包很短且 checksum 很小），機率極低（R）。
+6. **IPv4 checksum 增量更新在借位時差 2。** 計算是 17 bit 二補數 `checksum + old_len − 48`，再把 bit 16 加回來。結果為負時正確做法是減 1，這裡卻加 1。只在 `checksum + old_len < 48` 時發生：帶 RETH 的 RDMA WRITE 最短 60 byte，不會觸發；只有不帶 payload 的 SEND（44 byte）且 checksum ≤ 3 時才會。已用 [數值驗證](../verification-calcs.md) 確認（R + 數值）。
 7. **第一個封包的 ACK 帶 PSN 0。** 未初始化時狀態 RAM 的期望 PSN 是 reset 值 0，而回應的 PSN 欄位取自這個值，不是封包本身的 PSN。host 的初始 PSN 不是 0 時，第一個 ACK 的 PSN 會錯（R + I）。

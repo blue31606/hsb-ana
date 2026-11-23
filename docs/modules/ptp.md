@@ -80,7 +80,7 @@ flowchart LR
 
 1. `axis_drop` 去掉 14 byte Ethernet header（VLAN 已由 `rx_parser` 移除）。
 2. 雙時脈 `axis_buffer` 跨到 PTP 時脈，深度依時脈比與寬度決定（16 / 8 / 32 / 64 / 128）。
-3. `axis_to_vec` 攤平前 76 byte（`PTP_INGRESS_WIDTH`，可容納 68 byte 的 Delay_Resp）。
+3. `axis_to_vec` 攤平前 76 byte（`PTP_INGRESS_WIDTH`；RTL 註解寫「68 byte 的 Delay_Resp」，但 Delay_Resp message 只有 54 byte，L2 header 在 `axis_to_vec` 之前已經由 `axis_drop` 去掉，所以 76 byte 有餘裕）。
 4. `ptp_parser` 是純組合邏輯，固定 offset 解析：messageType（byte 0）、majorSdoId、versionPTP、domain、flags、correctionField、sourcePortIdentity、sequenceId、timestamp（byte 34–43）、requestingPortIdentity（byte 44–53）。
 5. 訊息有效條件（[`ptp_parser.sv#L95–L106`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_parser.sv#L95-L106)）：
 
@@ -92,7 +92,7 @@ flowchart LR
    | `!tuser[16]` | **帶 VLAN 的 PTP 訊息一律丟棄** |
 
 6. 只辨識 Sync（0）、Pdelay_Req（2）、Pdelay_Resp（3）、Follow_Up（8）、Delay_Resp（9）、Pdelay_Resp_Follow_Up（A）。**Announce、Signaling、Management 都被忽略，沒有 BMCA**：HSB 會跟隨 domain 內任何送 Sync 的 master。
-7. correctionField 只取 byte 8–13（64-bit 欄位的高 48 bit = 整數奈秒，捨去 16 bit 小數），`twoStepFlag` = flags bit 9（{L('ptp_parser.sv',71,81)}）。
+7. correctionField 只取 byte 8–13（64-bit 欄位的高 48 bit = 整數奈秒，捨去 16 bit 小數），`twoStepFlag` = flags bit 9（[ptp_parser.sv#L71–L81](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_parser.sv#L71-L81)）。
 
 ### 2. 接收時間戳
 
@@ -102,7 +102,9 @@ flowchart LR
 
 ```systemverilog
 NUM_CLK_DLY_ASYMM_HIF = (64/AXIS_BYTE) + mod + 8 + (14/AXIS_BYTE) + mod + 2   // PTP 較慢時
-NUM_CLK_DLY_ASYMM_PTP = 2 + (50/AXIS_BYTE) + mod + 1 + 1
+NUM_CLK_DLY_ASYMM_PTP = 2 + (50/AXIS_BYTE) + mod + 1 + 1                      // PTP 較慢時
+NUM_CLK_DLY_ASYMM_PTP = 6 + 1                                                 // 其他情況
+NUM_CLK_DLY_ASYMM_HIF = (64/AXIS_BYTE) + mod + 8 + (64/AXIS_BYTE) + mod       // 其他情況
 dly_asymm_tot = NUM_CLK_DLY_ASYMM_PTP × ptp_inc + NUM_CLK_DLY_ASYMM_HIF × hif_inc
 ```
 
@@ -166,7 +168,7 @@ sequenceDiagram
 
 ### 6. 計算（`ptp_calc`）
 
-兩個獨立的狀態機（[ptp_calc.sv#L181–L336](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_calc.sv#L181-L336)）：Sync 路徑 `IDLE → TS1 → TS2 → SUB → CF_ADD → CORR → ADD_DLY`，Delay 路徑 `IDLE → TS1 → TS2 → SUB_SM → CF_SM →（P2P：TS3 → TS4 → SUB_MS）→ ADD_SM_MS → ABS → MEAN`。每個時間戳先轉成單一奈秒數 `sec[31:0] × 10^9 + ns[29:0]`（共用一組 DSP 乘法，輸入、乘法、輸出各一級暫存器，每個時間戳等 4 拍），再取低 `W_OFM = 24` bit 做差。correctionField 以**無號**數加入（`{1'b0, cf[23:0]}`），負的 correctionField 會被當成很大的正數。
+兩個獨立的狀態機（[ptp_calc.sv#L181–L336](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_calc.sv#L181-L336)）：Sync 路徑 `IDLE → TS1 → TS2 → SUB → CF_ADD → CORR → ADD_DLY`，Delay 路徑 `IDLE → TS1 → TS2 → SUB_SM → CF_SM →（P2P：TS3 → TS4 → SUB_MS）→ ADD_SM_MS → ABS → MEAN`。每個時間戳先轉成單一奈秒數 `sec[31:0] × 10^9 + ns[29:0]`（共用一組 DSP 乘法，輸入、乘法、輸出各一級暫存器，每個時間戳佔 5 拍（`sync_timer` 從 0 數到 4 才離開）），再取低 `W_OFM = 24` bit 做差。correctionField 以 `{1'b0, cf[23:0]}` 加入，結果存回 24 bit，所以整個運算是 mod 2²⁴。負的 correctionField 的低 24 bit 就是它的二補數，截斷後的結果仍然正確；只有結果超出 ±2²³ ns（約 ±8.4 ms）時才會回捲（v6 修正：v5 寫成「負值會被當成很大的正數」）。
 
 `ptp_calc` 只在首次同步之後才啟動：`i_sync_ld = sync_ld && first_sync_rx_dpll_en`、`i_dly_ld = dly_ld && first_dly_rx_dpll_en`（[`ptp_top.sv#L453`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_top.sv#L453)、[`#L462`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_top.sv#L462)）。
 
@@ -248,9 +250,9 @@ host 軟體佐證：`FPGA_PTP_CTRL = 0x104`、`FPGA_PTP_PROFILE = 0x108`、`FPGA
 2. `ptp_ctrl_pcp` 與 `i_enable` 沒有作用。PTP TX 不帶 VLAN，`ptp_pcp` 可能是預留給 VLAN 化 PTP 的。
 3. offset 只取 24 bit，超過約 ±8.4 ms 的偏移會回捲。正常運作依賴「3 個 PPS 沒收到 Sync 就重新 latch」的機制。
 4. E2E 的 mean delay 公式用的是最近一次 Sync 的 `ofm_no_dly`（`dly_ms <= ofm_no_dly`）。Delay_Resp 與 Delay_Req 有 sequenceId 配對，但 Delay 量測與「哪一個 Sync」之間沒有配對，靠時間先後。
+5. 只有 host 埠 0 參與 PTP。
 6. 沒有 BMCA、忽略 Announce：網路上有多個 master 時，HSB 會被不同 master 的 Sync 輪流拉動。
-7. correctionField 以無號 24 bit 處理；負值或超過 16.7 ms 的值會算錯。
+7. correctionField 只用低 24 bit，運算 mod 2²⁴：負值處理正確，但 offset / delay 加上 correctionField 後超出約 ±8.4 ms 會回捲。
 8. P2P / gPTP 不支援 one-step 的 Pdelay_Resp（t3、t4 不更新）。
 9. 秒只有 32 bit，2106 年回捲；`o_sec` 高 16 bit 固定 0。
 10. DPLL 未啟用（`ptp_ctrl = 0`）時計時器從 0 自由執行，永遠不會與 master 對時。
-5. 只有 host 埠 0 參與 PTP。

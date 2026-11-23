@@ -176,7 +176,7 @@ PSN 回寫：`ROCE_CALC` 且 `fsm_cnt == 15` 時把目前 PSN 寫回 word F（[L
 | 情況 | 讀取 word 數（max） | commit 點（target） |
 |---|---|---|
 | 第一次執行 | 18 | 18 |
-| 單封包 frame、`md_disable`、與上一次同一個 VP | 7 | 2 |
+| 單封包 frame、`md_disable`、與上一次同一個 VP | 18（前一輪必定是 metadata 階段，狀態 RAM 的 bit 3 被寫成 0，所以 `is_new = 1`；[L861](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L861)） | 2 |
 | 新 frame、最後封包、metadata | 18 | 18 |
 | 同一 frame 的中間封包 | 7 | 7（`DUMP_CLK_CYCLES`） |
 
@@ -249,7 +249,7 @@ RETH 虛擬位址（[L1105–L1106](https://github.com/nvidia-holoscan/holoscan-
 | RETH | VA / R_Key / DMA length | 見 §6 / `DP_RKEY` / `dma_len` |
 | ImmDt | | `{psn[19:0], buf_ptr[11:0]}`（[L1309](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L1309)） |
 
-**IPv4 checksum**（[L1173–L1188](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L1173-L1188)）：5 級管線計算 `src IP + dst IP + (dma_len + 32/36) + 0xC52D`，再做兩次進位折回、取反。常數 `0xC52D = 0x4500 + 0x4000 + 0x4011 + 28`：分別是 version/IHL/TOS、flags、TTL/protocol 三個固定 16-bit 欄位，加上 total length 與 `pld_len` 的差 28（`ipv4_len − pld_len = 60 − 32`）。結果在 `fsm_cnt == 17` 寫進 Eth RAM，**header 使用的是 Eth RAM 中的值**。同一 frame 的中間封包只讀 7 個 word、不重算，沿用快取（這些封包長度相同，所以 checksum 相同）；長度不同的封包（新 frame、最後封包、metadata）都會讀完 18 個 word、重新寫入（R + I：時序上依賴 header 在 Eth RAM 寫入後才組裝）。`md_disable` 的 WRITE with Immediate 封包保留舊值（[L539](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L539)）。
+**IPv4 checksum**（[L1173–L1188](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L1173-L1188)）：5 級管線計算 `src IP + dst IP + (dma_len + 32/36) + 0xC52D`，再做兩次進位折回、取反。常數 `0xC52D = 0x4500 + 0x4000 + 0x4011 + 28`：分別是 version/IHL/TOS、flags、TTL/protocol 三個固定 16-bit 欄位，加上 total length 與 `pld_len` 的差 28（`ipv4_len − pld_len = 60 − 32`）。結果在 `fsm_cnt == 17` 寫進 Eth RAM，**header 使用的是 Eth RAM 中的值**。同一 frame 的中間封包只讀 7 個 word、不重算，沿用快取（這些封包長度相同，所以 checksum 相同）；長度不同的封包（新 frame、最後封包、metadata）都會讀完 18 個 word、重新寫入（R + I：時序上依賴 header 在 Eth RAM 寫入後才組裝）。`md_disable` 時被略過的 metadata 階段（`pkt_is_imm`，不送出封包）寫回舊的 checksum，不會用 metadata 長度覆蓋資料封包的快取值；這不是指以 WRITE with Immediate 送出的最後一個資料封包（`is_data_wr_imm`）（[L539](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L539)）。
 
 ### 8. 1722B CoE header
 
@@ -270,7 +270,7 @@ RETH 虛擬位址（[L1105–L1106](https://github.com/nvidia-holoscan/holoscan-
 | 30–37 | timestamp | `cur_ptp[63:0]`：**`hdr_trigger` 時（封包送出時）**的 PTP 時間，不是 SOF 時間 |
 | 38 | sequence_number | `psn[7:0]` |
 | 39–40 | `e`、`se`、`fcv`、`version`、`exposure`、3'b0、`channel_number[5:0]` | channel = `DP_QP[5:0]` |
-| 41 | flags | `[3:0]`：1 = frame 開始、2 = metadata、0 = 其他；`[7:4]`：1 = line 結束 |
+| 41 | flags | `[3:0]`：1 = frame 開始、2 = metadata（`md_disable` 時也用於以 WRITE with Immediate 送出的最後一個資料封包，`is_data_wr_imm`）、0 = 其他；`[7:4]`：1 = line 結束 |
 | 42–45 | `2'b00`、`frame_num[1:0]`、`byte_offset[27:0]` | frame 內 byte 位置 |
 
 
@@ -366,7 +366,7 @@ Frame CRC（[L207–L249](https://github.com/nvidia-holoscan/holoscan-sensor-bri
 
 | Offset | 名稱 | Reset | 說明 |
 |---|---|---|---|
-| 0x04 | `dp_pkt_len` | `0x5CE`（{L('t',123)}） | `[7:0]` 每個資料封包的 page 數。host 以 `PAGES(payload_size)` 寫入 |
+| 0x04 | `dp_pkt_len` | `0x5CE`（[L123](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L123)） | `[7:0]` 每個資料封包的 page 數。host 以 `PAGES(payload_size)` 寫入 |
 | 0x08 | `dp_pkt_dev_udp_port` | `0x3000`（12288） | 本機 UDP 來源埠（host `DATA_SOURCE_UDP_PORT`） |
 | 0x0C | `dp_pkt_vip_mask` | 0 | 這個 host 服務的 VP |
 | 0x10 | `dp_pkt_crc_xor` | 0 | frame CRC 最後 XOR 的值 |

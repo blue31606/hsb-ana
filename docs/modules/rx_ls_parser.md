@@ -94,7 +94,7 @@ offset 從 Ethernet header 開頭算（VLAN 已由 `rx_parser` 移除）：
 | 54 / 55 / 56–57 | | cmd / flags / sequence |
 | 48（RoCE：60）起 | `{addr[31:0], data[31:0]}` × N，big endian | 同左 |
 
-N = `(udp_len − 22) >> 3`（RoCE：`(udp_len − 38) >> 3`）。
+RTL 的 `total_pairs = (udp_len − 22) >> 3`（RoCE：`(udp_len − 38) >> 3`）等於 **N − 1**（註解：「UDP header + RoCE header + ICRC + 1 pair」），與「已完成的 pair 數」`num_pairs` 比較，所以結束條件正確；一般 ECB 的 N 由 `tlast` 決定，`total_pairs` 只在 RoCE-ECB 使用（v6 修正：v5 把這個式子寫成 N）。
 
 ### 命令、flags、回應碼
 
@@ -184,10 +184,10 @@ host 軟體另外定義了 0x02、0x05、0x07–0x0A，RTL 沒有產生這些值
 | 情況 | 行為 |
 |---|---|
 | 封包在 header 收完前結束 | `DCD_HDR` 看到 `tlast` → `DCD_DONE`：**不回應**、不執行 |
-| 封包在一組 pair 中途結束 | `DCD_DATA` 看到 `tlast` → `DCD_WAIT`：用不完整的 addr / data（未收到的 byte 在 `DCD_IDLE` 時清為 0）**仍然執行一次 APB 存取** |
+| 封包在一組 pair 中途結束 | `DCD_DATA` 看到 `tlast` → `DCD_WAIT`：用不完整的 addr / data（`cmd_addr` / `cmd_dout` 只在 IDLE / FLUSH 清除，所以第一組以外的 pair，未收到的 byte 保留上一組的值；見注意事項 5）**仍然執行一次 APB 存取** |
 | 一般 ECB 的 pair 數 | 由 `tlast` 決定，不看 UDP length；Ethernet 最小長度補齊的 byte 會被當成下一組 pair 的開頭。例如 `WR_BLOCK` 只帶 1 組時封包被補到 60 byte，多出的 4 byte 會觸發一次位址不完整的額外存取（推斷） |
 | RoCE-ECB 的 pair 數 | 由 `total_pairs = (udp_len − 38) >> 3` 決定，ICRC 不會被當成資料 |
-| UDP length < 22 | `total_pairs` 下溢成很大的值（只影響 RoCE-ECB） |
+| RoCE-ECB 的 UDP length < 38 | `total_pairs` 下溢成很大的值；一般 ECB 不使用 `total_pairs`，不受影響 |
 
 ## `bootp`
 
@@ -215,7 +215,7 @@ HSB 用 BOOTP 格式向 host 宣告自己，host 軟體的 `Enumerator` 收這�
 
 `rx_parser` 把 dest MAC = 本機、UDP dest 埠 = 12268 的封包歸為 BOOTP（不檢查 dest IP，因為 HSB 此時可能還沒有正確的 IP）。`bootp` 的輸入 `tready` 固定為 1；收到 op = 2（BOOTP reply）時，**不檢查 xid 或 chaddr**，直接取 byte 58–61（BOOTP `yiaddr`）當作收到它的 host 埠的 IP（[L454–L460](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/bootp/bootp.sv#L454-L460)）。
 
-IP 來源優先順序：BOOTP reply > EEPROM（`ip_addr_vld` 上升緣，host 埠 k 用 EEPROM IP + k）> 預設 `192.168.0.2 + k`。
+IP 來源：reset 時是預設 `192.168.0.2 + k`；之後**最後發生的事件勝出**：BOOTP reply 更新收到 reply 的那個 host 埠，EEPROM `ip_addr_vld` 上升緣更新所有埠（host 埠 k 用 EEPROM IP + k）。兩者在同一拍發生時 BOOTP reply 優先（[bootp.sv#L454–L466](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/bootp/bootp.sv#L454-L466)）。
 
 ## `arp_ping_pkt_proc`
 

@@ -28,17 +28,17 @@
    | 控制平面 | [事件與序列器](docs/modules/event.md) | 事件向量、中斷封包、暫存器序列器 | 逐行 |
    | Data Plane（Sensor → Host） | [`packetizer`](docs/modules/packetizer.md) | bypass / 可程式化 / 固定 pattern、Virtual Port | 逐行 |
    | Data Plane | [`dp_pkt_top`](docs/modules/dp_pkt_top.md) | VP 仲裁、設定 RAM、header FSM、RoCEv2 / CoE header、metadata、SOF 時間戳 | 逐行 |
-   | Data Plane | [`data_gen` / `ram_player`](docs/modules/data_gen.md) | 測試資料產生 | 主要邏輯 |
+   | Data Plane | [`data_gen` / `ram_player`](docs/modules/data_gen.md) | 測試資料產生、RAM 重播與時間戳模式 | 逐行 |
    | Sensor TX（Host → Sensor） | [`sensor_tx_pkt_proc`](docs/modules/sensor_tx_pkt_proc.md) | 去 header / ICRC、依 QP 分流 | 逐行 |
    | Sensor TX | [`tx_stream_buffer`](docs/modules/tx_stream_buffer.md) | 雙時脈 FIFO、預填、PAUSE（含 `pause_gen`） | 逐行 |
    | RoCE | [`roce_ack`](docs/modules/roce_ack.md) | RC 的 PSN 檢查、ACK / NAK | 逐行 |
    | RoCE | [`roce_icrc` / `lfsr_hc`](docs/modules/roce.md) | ICRC 計算、支援的封包長度 | 逐行 |
    | 時間同步 | [PTP](docs/modules/ptp.md) | 1588 E2E / gPTP / P2P、時間戳、offset 計算、DPLL 迴路增益、計時器 | 逐行 |
    | 開機 | [開機與 reset](docs/modules/boot_and_reset.md) | `reset_gen`（串接與軟體 reset）、`sys_init`、`eeprom_info`、`glb_ctrl_top` | 逐行 |
-   | 周邊 | [I2C / SPI / UART / GPIO](docs/modules/peripherals.md) | 交易狀態機、時脈公式、逾時、暫存器 | I2C 逐行；SPI / UART 主要邏輯 |
+   | 周邊 | [I2C / SPI / UART / GPIO](docs/modules/peripherals.md) | 交易狀態機、位元引擎、時脈公式、逾時、暫存器 | 逐行 |
    | Bridge | [Bridge 模式](docs/modules/bridge.md) | `routing_table`、`bridge_pkt_proc`、透明時鐘、緩衝 | 逐行 |
    | 共用 | [`lib_axis` / `misc`](docs/modules/lib.md) | 39 個元件目錄；CDC 元件與使用檢查、`axis_insert` 逐行 | 目錄 + 重點元件逐行 |
-   | 參考設計 | [`ref_design`](docs/modules/ref_design.md) | `vsync_gen`、`delayed_io`、`i2s_top`、`imu_top` | 介面層級 |
+   | 參考設計 | [`ref_design`](docs/modules/ref_design.md) | `vsync_gen`、`delayed_io`、`i2s_top`（時脈、序列化、buffer）、`imu_top`（串流 I2C） | `vsync_gen` / I2S / IMU 主要邏輯；`delayed_io` 介面 |
 
 3. **系統層級**：
    - [端到端流程](docs/flow.md)：上電 → enumeration → 時間同步 → 設定 Data Plane → 一個 frame 的傳送，串起 host 軟體與 RTL，附數值範例。
@@ -50,7 +50,11 @@
    - [暫存器表](docs/registers/regmap.md)（`regmap_pkg.sv` 部分，由 `tools/gen_regmap.py` 產生，含註解比對）
    - [位址空間與 RAM](docs/registers/memory-map.md)
    - [時序圖](docs/timing/)
-5. **[驗證狀態](VERIFICATION.md)**：每項結論是怎麼確認的、原始碼中的不一致與可能的問題。
+5. **問題與驗證**：
+   - [問題清單](docs/issues.md)：全部 RTL 問題的分級、觸發條件、確認方法與修正草稿。
+   - [數值驗證](docs/verification-calcs.md)：`tools/verify/verify_calcs.py` 對 checksum、CRC、排程、版面等可計算結論的獨立比對。
+   - [定向測試計畫](docs/test-plan.md)：對應問題清單的測試與 SystemVerilog 草稿（`tests/`）。
+   - [驗證狀態](VERIFICATION.md)：每項結論是怎麼確認的，以及各版的修正。
 
 分析深度：**逐行** = 每個 always / assign 都讀過；**主要邏輯** = FSM、資料格式、暫存器都讀過，輔助邏輯略讀；**介面 / 暫存器層級** = 只讀介面、暫存器與註解。
 
@@ -72,6 +76,7 @@
 |---|---|
 | `tools/gen_regmap.py` | 從 `regmap_pkg.sv` 產生暫存器表，並比對原始碼註解的位址 |
 | `tools/gen_allregs.py` | 產生完整暫存器索引（`regmap_pkg.sv` + 模組內暫存器、RAM、周邊、參考設計） |
+| `tools/verify/verify_calcs.py` | 照 RTL 重寫可計算的運算（checksum、CRC、排程、版面），與獨立參考實作比對；有任何 FAIL 時結束碼為 1 |
 | `tools/wave.py` | 把 `docs/timing/*.wave.json`（WaveDrom 子集）轉成 SVG。GitHub 不支援 WaveDrom，所以 SVG 也一併 commit |
 
 重新產生：
@@ -82,6 +87,7 @@ git -C ../holoscan-sensor-bridge checkout 41cecaa81ab906a55e7ec22e5e6989f7e602a4
 python3 tools/gen_regmap.py ../holoscan-sensor-bridge > docs/registers/regmap.md
 python3 tools/gen_allregs.py ../holoscan-sensor-bridge > docs/registers/all-registers.md
 python3 tools/wave.py docs/timing/*.wave.json
+python3 tools/verify/verify_calcs.py ../holoscan-sensor-bridge
 ```
 
 ## 名詞
@@ -106,4 +112,5 @@ python3 tools/wave.py docs/timing/*.wave.json
 | v2 | `0158d91` | 每個模組一份文件；加入時序圖、permalink、自動產生的暫存器表、驗證狀態 |
 | v3 | `932292c` | 改為完整、中立的全 IP 分析：新增 PTP、packetizer、事件、APB、開機、周邊、Bridge、RoCE、共用元件、參考設計、板級、驗證環境等文件；`dp_pkt_top`、`rx_ls_parser` 重寫為主要邏輯深度；移除特定應用的設計提案 |
 | v4 | `ddb130a` | `packetizer`、`dp_pkt_top`、PTP 補到逐行並加時序圖；新增端到端流程、效能分析、完整暫存器索引；周邊狀態機與時脈公式；板級感測器接收路徑；testbench 流程與檢查項目 |
-| v5 | 目前版本 | 重畫頂層方塊圖並新增跨時脈地圖、控制平面 / Data Plane 全貌；`rx_ls_parser`、`roce_icrc`、`roce_ack`、Bridge、APB、開機與 reset 補到逐行；CDC 元件逐行並逐一檢查使用處 |
+| v5 | `fc2b904` | 重畫頂層方塊圖並新增跨時脈地圖、控制平面 / Data Plane 全貌；`rx_ls_parser`、`roce_icrc`、`roce_ack`、Bridge、APB、開機與 reset 補到逐行；CDC 元件逐行並逐一檢查使用處 |
+| v6 | 目前版本 | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題 |

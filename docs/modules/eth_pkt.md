@@ -28,7 +28,7 @@
 | out | `o_axis_*` | → MAC |
 | out | `o_pkt_inc` | 每送出一個封包脈衝一次 → `bootp` |
 | out | `o_ptp_val` | PTP（index 1）封包送完的脈衝 → `ptp_top` 打 TX 時間戳 |
-| out | `o_del_req_val` | PTP Delay_Req 送出（Bridge 用） |
+| out | `o_del_req_val` | PTP Delay_Req 送出（Bridge 用）。判斷條件寫成 `out_idx == 4`，而 4 是 PAUSE、Bridge 是 5，所以實際不會為 Bridge 的封包產生（見 [bridge 注意事項 9](bridge.md#注意事項)） |
 
 | Index | 來源 |
 |---|---|
@@ -61,7 +61,7 @@ flowchart LR
 
 ### 2. 仲裁
 
-`axis_arb`，`ARB_TYPE = "PRIORITY"`（[L117](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/eth_pkt/eth_pkt.sv#L117)）。以封包為單位，封包中途不換來源。`SKID = 5'b01011` 對高速來源加 skid buffer（註解寫 data plane、PTP、pause、bridge）。
+`axis_arb`，`ARB_TYPE = "PRIORITY"`（[L117](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/eth_pkt/eth_pkt.sv#L117)）。以封包為單位，封包中途不換來源。`SKID = 5'b01011` 依輸入編號逐位元對應：6 個輸入時是 index 0（DP）、1（PTP）、3（LS）有 skid buffer，2（ACK）、4（pause）、5（bridge）沒有。RTL 註解寫「data plane、PTP、pause、bridge」，是舊的 5 埠順序留下的，與實際不符。
 
 ### 3. MAC 逾時
 

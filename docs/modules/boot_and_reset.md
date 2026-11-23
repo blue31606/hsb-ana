@@ -40,7 +40,7 @@ flowchart LR
   A -- "o_apb_rst" --> S["reset_sync × N（各 SIF RX / TX）"]
 ```
 
-- `reset_sync`：板級 reset 非同步拉起、同步釋放（3 級）；之後再 2 級得到同步 reset `o_srst`。HSB 只用同步輸出。
+- `reset_sync`：板級 reset（或 PLL 未鎖定）先經 `aasr_rst` → `aasr_rst_q` 兩級；第三級 `arst` 只給 `o_arst`。同步 reset `o_srst` 是 `aasr_rst_q` 再經 `srst[1:0]` 兩級，共 4 級。HSB 只用同步輸出。
 - **串接**：只有 APB 的 `reset_sync` 直接看 `i_sys_rst | i_cfg_rst`，HIF、PTP、每個 SIF 的 reset 都以 `o_apb_rst` 作為同步 reset 來源，所以其他時脈域一定比 APB 晚釋放。
 - 某個 SIF 時脈沒有在跑時，它的 `reset_sync` 不會釋放（暫存器初值為 1），相關的 FIFO 經 `cdc_reset_handshake` 保持停用。
 - **軟體 reset 會自我清除**：`hsb_ctrl[3]`（`glb_ctrl_top` 的控制暫存器，經 `reg_cdc` 到 HIF 時脈）→ APB reset → HIF reset → HIF 端的暫存器副本被 reset 成 0 → `hsb_ctrl[3]` 回到 0 → reset 釋放。整個脈衝約 6–8 個 APB 時脈（推斷）。這也是 host 寫入 `0x04 = 0x8` 後不等 ECB 回應的原因：回應路徑本身正在 reset。
@@ -83,7 +83,7 @@ flowchart LR
 **CRC**（[eeprom_info.sv#L276–L322](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L276-L322)）：
 
 - 程式實際用 `0x8C` 右移，也就是反射多項式 `0x31`（x⁸ + x⁵ + x⁴ + 1，Dallas / Maxim CRC-8），初值 0。檔頭註解寫 x⁸ + x³ + x² + 1 / `0xB0`，與程式不符。
-- 計算範圍是 byte 0–254，`eeprom_crc_err = (CRC ≠ 0)`。但 `fpga/script/eeprom/eeprom_utility.py` 的做法是把 byte 0–254 的 CRC 存在 byte 255，所以照工具正確寫入的 EEPROM，RTL 算出的值通常不為 0。
+- 計算範圍是 byte 0–254，`eeprom_crc_err = (CRC ≠ 0)`。但 `fpga/script/eeprom/eeprom_utility.py` 的做法是把 byte 0–254 的 CRC 存在 byte 255，所以照工具正確寫入的 EEPROM，RTL 算出的值通常不為 0。 已用 [數值驗證](../verification-calcs.md) 確認：10000 個由工具寫入的隨機映像中有 9964 個被判為錯誤，而 RTL 算出的值每次都等於 byte 255；正確的判斷應是 `crc != byte255`。
 - `eeprom_crc_err` 在 `HOLOLINK_top` 中**沒有連到任何地方**，CRC 結果不影響開機，欄位不論 CRC 是否正確都會被使用。
 
 沒有定義 `ENUM_EEPROM` 時不實例化，改由板級從 `i_mac_addr`、`i_board_sn`、`i_enum_vld` 提供。

@@ -96,7 +96,7 @@ flowchart LR
 
 - **`buf_rd_req`**（[L456–L460](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L456-L460)）：`WAIT2` / `PATTERN` / `PAD` 與 `DELAY` 不讀；上一拍 VP 快滿（`r_pack_tready = 0`）不讀；`IDLE` 一律讀；其他狀態只在 `ld_nxt` 為 1 時讀。最後 `o_axis_tready = last_tready & buf_rd_req`（[L598](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L598)）。注意 `o_axis_tready` 依賴 `i_axis_tvalid`（`ld_nxt && i_axis_tvalid`），這不符合 AXIS「`tready` 不應依賴 `tvalid`」的建議，但不違反規範。
 - **列計數**（[L344–L370](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L344-L370)）：`ram_sos`（`IDLE` 且這拍沒收 beat、或 `latency ≠ 0`）把列號歸 0 並重新載入 `ld_shift = ld_arr`；`ram_advance` 時列號加 1、`ld_shift` 右移；列號 ≥ `max_addr` 時繞回 0。**APB 寫 RAM 也會把列號設成 `pack_ram_addr[3:0]`**（[L353–L356](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L353-L356)），所以串流進行中寫 RAM 會打亂排程。
-- **`pack_dvalid`**（[L394–L397](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L394-L397)）：送進資料路徑的有效旗標。`PAD` / `PATTERN` / `WAIT2` 一律有效（輸出 0 或歷史資料）；其他狀態 = 讀到非 bypass beat，或這一列不讀輸入（`!ld_nxt`，用歷史產生輸出）。
+- **`pack_dvalid`**（[L394–L397](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L394-L397)）：送進資料路徑的有效旗標。`IDLE` 時 = `buf_rd_val`（包括 bypass beat，IDLE 是 bypass 的主要路徑）；PAD 類狀態一律有效（輸出 0 或歷史資料）；`DELAY` 為 0；其他狀態 = 讀到非 bypass beat，或這一列不讀輸入（`!ld_nxt`，用歷史產生輸出）。
 - **`pack_stall`**（[L390](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L390)）：上一列不讀輸入，資料路徑的歷史暫存器不前移。
 - **`cnt`**（[L463–L468](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L463-L468)）：每條 line 的輸出拍數，用來決定補齊長度。`PAD_CYCLES = 64 / (DIN_WIDTH / 8)`（[L68–L71](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L68-L71)）：64-bit 輸入時 8 拍；`DIN_WIDTH ≥ 512` 時 `NO_PAD`。
 
@@ -123,9 +123,9 @@ flowchart LR
 
 | 組 | 每列位元數 | 讀取時機 |
 |---|---|---|
-| CLEAR（cycle select） | `(DIN_WIDTH / SORT_RESOLUTION) × ⌈log2(NUM_CYCLES + 1)⌉` | 延遲 `PACK_PIPE_COUNT − 1` 拍（與排序網路輸出對齊） |
+| CLEAR（cycle select） | `(DIN_WIDTH / SORT_RESOLUTION) × ⌈log2(NUM_CYCLES + 1)⌉` | 取 `ram_addr_pipe[PACK_PIPE_COUNT − 1]`，`pipe[0]` 已晚 1 拍，所以實際延遲 `PACK_PIPE_COUNT` 拍（與排序網路輸出對齊） |
 | SORT | `CTRL_WIDTH_SORT × NUM_CYCLES` | 目前列號（選擇訊號隨資料在排序網路中一起前進） |
-| VP | `CTRL_WIDTH_VP × VP_COUNT` | 延遲 `PACK_PIPE_COUNT − 1` 拍 |
+| VP | `CTRL_WIDTH_VP × VP_COUNT` | 同 CLEAR，延遲 `PACK_PIPE_COUNT` 拍 |
 
 各板級的實際配置（由參數計算，並與 testbench 的 `pack_vp_ram_index()` 公式一致）：
 
@@ -133,7 +133,7 @@ flowchart LR
 |---|---|---|---|---|---|---|---|
 | CPNX100 SIF 0、1 | 64 / 2 / 64 / 3 / 2 | 191 | 15 | 4 | 2 / 18 / 1 | 21 | 336 |
 | NV MIPI 參考 | 64 / 2 / 64 / 3 / 1 | 191 | 15 | 4 | 2 / 18 / 1 | 21 | 336 |
-| Terasic S10（512-bit） | 512 / 16 / 256 / 1 / 4 | 191 | 15 | 4 | 1 / 6 / 1 | 8 | 128 |
+| Terasic S10（512-bit，預設） | 512 / 16 / 128 / 1 / 4 | 191 | 15 | 4 | 1 / 6 / 1 | 8 | 128 |
 
 （CPNX100 SIF 2 是 32-bit，`SIF_RX_PACKETIZER_EN = 0`，只有 bypass VP。）
 
@@ -148,7 +148,7 @@ flowchart LR
 | 條件 | `vp_ctrl` |
 |---|---|
 | `CTRL_WIDTH_VP == 2` 且 `W_USER > 2` | `commit = (tuser[3:2] == VP 編號)`；bypass beat 一律寫 VP 0 |
-| `duplicate = 1` | 全 1：每個 VP 都寫 |
+| `duplicate = 1` | `'b1`（數值 1，不是全 1）= `{select = 0, commit = 1}`：每個 VP 都寫入 slice 0，也就是和 VP 0 相同的資料 |
 | bypass beat | VP 0 寫 `{select = 0, commit = 1}` |
 | 其他 | VP RAM 該列的值 |
 

@@ -93,7 +93,7 @@ frame 完成通知（metadata 封包）在最後一個資料封包之後立即�
 | `cam_rcvr` `axis_buffer` | 512 × 80 bit = 5 KB | `NO_BACKPRESSURE`：**資料遺失**，不會反壓到相機 |
 | packetizer → VP FIFO | 1006 × 64 bit ≈ 8 KB（MTU 4096）/ 356 × 64 bit ≈ 2.8 KB（MTU 1500）；`dc_fifo` 實體深度補到 1024 / 512 筆，門檻仍以 1006 / 356 計算 | 7/8 時 `pack_tready = 0`，反壓 SIF RX |
 | `rx_parser` 輸入 FIFO | 2 × MTU | 溢位時 beat 遺失（[rx_parser 注意事項](modules/rx_parser.md#注意事項)） |
-| `tx_stream_buffer` | `SIF_TX_BUF_SIZE` × `SIF_TX_WIDTH`（CPNX100：4096 × 32 bit = 16 KB） | almost full 時送 802.3x PAUSE 給 host |
+| `tx_stream_buffer` | 4096 × `max(HIF 寬度, SIF_TX_WIDTH)`（`axis_buffer_tx` 的 `CENTER_WIDTH`；CPNX100：4096 × 64 bit = 32 KB） | almost full 時送 802.3x PAUSE 給 host |
 
 **反壓鏈的斷點（推斷）**：在 CPNX100 上，HSB 可以反壓 `cam_rcvr`，但 `cam_rcvr` 不能反壓相機。HSB 停止接收時，5 KB 的緩衝以 10 Gb/s 計算約 4 µs 就滿，之後資料遺失。可能讓 HSB 長時間停止接收的情況：
 

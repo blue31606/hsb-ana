@@ -41,7 +41,7 @@ flowchart LR
   | `FF:FF:FF:FF:FF:FF`、PTP multicast（`01:1B:19:00:00:00`、`01:80:C2:00:00:0E`） | 全部 |
   | 全 0 | 丟棄 |
   | CAM 命中 | 對應 SIF 埠 |
-  | CAM 未命中（含其他 multicast，例如 IPv4 `01:00:5E:*`、IPv6 `33:33:*`） | **丟棄**（不 flooding） |
+  | CAM 未命中（含其他 multicast，例如 IPv4 `01:00:5E:*`、IPv6 `33:33:*`） | `cam` 未命中時 `match_idx = 0`，輸出 `ram[0]` 的資料，而 `routing_table` 不看 `cam_data_val`。entry 0 還空著時資料是 0，等於**丟棄**；新 entry 寫在空位中，entry 0 最後才被填，**CAM 填滿 64 筆後，所有未命中都會被送到 entry 0 的 SIF 埠**（R，v6 稽核發現） |
 
 - 同時辨識 SIF 端的 PTP Delay_Req（`o_is_del_req`），給 residence time 計算用。
 
@@ -105,3 +105,6 @@ two-step 透明時鐘：把 Sync 與 Delay_Req 在 bridge 內停留的時間（r
 6. 未知 unicast 與一般 multicast（IPv4 / IPv6 multicast、mDNS 等）都會被丟棄，IPv6 的鄰居探索因此無法通過 bridge（推斷）。
 7. host RX 緩衝只有預設的 256 筆（64-bit 時 2 KB）且是 store-and-forward。almost full（7/8，約 1.8 KB）時對 `rx_parser` 反壓，但輸出要等 `tlast` 才開始，所以 **64-bit 設定下大於約 1.8 KB 的封包會讓這個 host 埠的 bridge 路徑卡死**，並經 `rx_parser` 擋住同一埠的所有流量（推斷：依 `axis_buffer` 的 `WAIT2SEND` 行為推論，未模擬確認）。
 8. 仲裁固定讓 host 來源優先於 SIF 來源；host 流量持續時，SIF → host 的封包可能長時間等待。
+9. **SIF 端 Delay_Req 的 `del_req_val` 永遠不會產生。** `eth_pkt` 以 `out_idx == 4` 判斷 Delay_Req 送出（[eth_pkt.sv#L303](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/eth_pkt/eth_pkt.sv#L303)、[#L307](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/eth_pkt/eth_pkt.sv#L307)），但 index 4 是 PAUSE，Bridge 是 index 5（[HOLOLINK_top.sv#L924–L929](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L924-L929)）。所以 Bridge 轉送的 Delay_Req 不會觸發 `rd_ptp_fifo`，上表「SIF 端 Delay_Req」的 residence time 量測不會照描述結束（R，v6 稽核發現；影響需模擬確認）。
+10. **CAM 填滿後未命中會轉送到 entry 0 的埠。** 見上方 `routing_table` 表格（R）。
+11. 學習請求可能遺失：`mac_valid` 在 `mac_grant` 時清除，即使那一拍 `cam_wr` 因為 host 查詢（`|i_mac_req`）被壓住（[routing_table.sv#L94–L96](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/routing_table/routing_table.sv#L94-L96)、[#L193–L202](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/routing_table/routing_table.sv#L193-L202)）。後果只是那個 src MAC 要等下一個封包才學到（I：`rrarb` 的授權時序未確認）。

@@ -247,4 +247,4 @@ Reset 值來自 [`RST_VAL`（L164）](https://github.com/nvidia-holoscan/holosca
 | 本機 unicast | 所有分類旗標為 0 → 丟棄 |
 | Broadcast / multicast | `is_btx = 1`；非 Bridge 模式下 `brx_axis_tready` 固定為 1 → 丟棄；Bridge 模式下交給 `bridge_pkt_proc` |
 
-`HDR_BYTES = 58` 可容納 Ethernet + VLAN + IPv4 + UDP + BTH + RETH，以及 1722B CoE header（46 byte，含 VLAN 50 byte）。
+`HDR_BYTES = 58`（14 + 4 + 20 + 8 + 12）可容納 Ethernet + VLAN + IPv4 + UDP + BTH（不含 RETH），以及 1722B CoE header（46 byte，含 VLAN 50 byte）。
