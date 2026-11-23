@@ -1,0 +1,180 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1106' height='304' viewBox='0 0 1106 304'>
+<rect width='100%' height='100%' fill='white'/>
+<text x='10' y='20' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' font-weight='bold'>dp_pkt_top：header FSM 與前一個封包的資料傳送重疊（HOST_WIDTH = 64，示意）；I=IDLE L=LOAD_STS G=GRANT S=STORE H=HDR_WAIT</text>
+<line x1='190' y1='28' x2='190' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='204.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>0</text>
+<line x1='218' y1='28' x2='218' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='232.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>1</text>
+<line x1='246' y1='28' x2='246' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='260.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>2</text>
+<line x1='274' y1='28' x2='274' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='288.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>3</text>
+<line x1='302' y1='28' x2='302' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='316.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>4</text>
+<line x1='330' y1='28' x2='330' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='344.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>5</text>
+<line x1='358' y1='28' x2='358' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='372.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>6</text>
+<line x1='386' y1='28' x2='386' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='400.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>7</text>
+<line x1='414' y1='28' x2='414' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='428.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>8</text>
+<line x1='442' y1='28' x2='442' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='456.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>9</text>
+<line x1='470' y1='28' x2='470' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='484.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>10</text>
+<line x1='498' y1='28' x2='498' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='512.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>11</text>
+<line x1='526' y1='28' x2='526' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='540.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>12</text>
+<line x1='554' y1='28' x2='554' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='568.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>13</text>
+<line x1='582' y1='28' x2='582' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='596.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>14</text>
+<line x1='610' y1='28' x2='610' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='624.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>15</text>
+<line x1='638' y1='28' x2='638' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='652.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>16</text>
+<line x1='666' y1='28' x2='666' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='680.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>17</text>
+<line x1='694' y1='28' x2='694' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='708.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>18</text>
+<line x1='722' y1='28' x2='722' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='736.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>19</text>
+<line x1='750' y1='28' x2='750' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='764.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>20</text>
+<line x1='778' y1='28' x2='778' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='792.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>21</text>
+<line x1='806' y1='28' x2='806' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='820.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>22</text>
+<line x1='834' y1='28' x2='834' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='848.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>23</text>
+<line x1='862' y1='28' x2='862' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='876.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>24</text>
+<line x1='890' y1='28' x2='890' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='904.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>25</text>
+<line x1='918' y1='28' x2='918' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='932.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>26</text>
+<line x1='946' y1='28' x2='946' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='960.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>27</text>
+<line x1='974' y1='28' x2='974' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='988.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>28</text>
+<line x1='1002' y1='28' x2='1002' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='1016.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>29</text>
+<line x1='1030' y1='28' x2='1030' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='1044.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>30</text>
+<line x1='1058' y1='28' x2='1058' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='1072.0' y='294' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#999' text-anchor='middle'>31</text>
+<line x1='1086' y1='28' x2='1086' y2='280' stroke='#eeeeee' stroke-width='1'/>
+<text x='10' y='51.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>clk</text>
+<polyline points='190,56 190,38 204.0,38 204.0,56 218,56' fill='none' stroke='black'/>
+<polyline points='218,56 218,38 232.0,38 232.0,56 246,56' fill='none' stroke='black'/>
+<polyline points='246,56 246,38 260.0,38 260.0,56 274,56' fill='none' stroke='black'/>
+<polyline points='274,56 274,38 288.0,38 288.0,56 302,56' fill='none' stroke='black'/>
+<polyline points='302,56 302,38 316.0,38 316.0,56 330,56' fill='none' stroke='black'/>
+<polyline points='330,56 330,38 344.0,38 344.0,56 358,56' fill='none' stroke='black'/>
+<polyline points='358,56 358,38 372.0,38 372.0,56 386,56' fill='none' stroke='black'/>
+<polyline points='386,56 386,38 400.0,38 400.0,56 414,56' fill='none' stroke='black'/>
+<polyline points='414,56 414,38 428.0,38 428.0,56 442,56' fill='none' stroke='black'/>
+<polyline points='442,56 442,38 456.0,38 456.0,56 470,56' fill='none' stroke='black'/>
+<polyline points='470,56 470,38 484.0,38 484.0,56 498,56' fill='none' stroke='black'/>
+<polyline points='498,56 498,38 512.0,38 512.0,56 526,56' fill='none' stroke='black'/>
+<polyline points='526,56 526,38 540.0,38 540.0,56 554,56' fill='none' stroke='black'/>
+<polyline points='554,56 554,38 568.0,38 568.0,56 582,56' fill='none' stroke='black'/>
+<polyline points='582,56 582,38 596.0,38 596.0,56 610,56' fill='none' stroke='black'/>
+<polyline points='610,56 610,38 624.0,38 624.0,56 638,56' fill='none' stroke='black'/>
+<polyline points='638,56 638,38 652.0,38 652.0,56 666,56' fill='none' stroke='black'/>
+<polyline points='666,56 666,38 680.0,38 680.0,56 694,56' fill='none' stroke='black'/>
+<polyline points='694,56 694,38 708.0,38 708.0,56 722,56' fill='none' stroke='black'/>
+<polyline points='722,56 722,38 736.0,38 736.0,56 750,56' fill='none' stroke='black'/>
+<polyline points='750,56 750,38 764.0,38 764.0,56 778,56' fill='none' stroke='black'/>
+<polyline points='778,56 778,38 792.0,38 792.0,56 806,56' fill='none' stroke='black'/>
+<polyline points='806,56 806,38 820.0,38 820.0,56 834,56' fill='none' stroke='black'/>
+<polyline points='834,56 834,38 848.0,38 848.0,56 862,56' fill='none' stroke='black'/>
+<polyline points='862,56 862,38 876.0,38 876.0,56 890,56' fill='none' stroke='black'/>
+<polyline points='890,56 890,38 904.0,38 904.0,56 918,56' fill='none' stroke='black'/>
+<polyline points='918,56 918,38 932.0,38 932.0,56 946,56' fill='none' stroke='black'/>
+<polyline points='946,56 946,38 960.0,38 960.0,56 974,56' fill='none' stroke='black'/>
+<polyline points='974,56 974,38 988.0,38 988.0,56 1002,56' fill='none' stroke='black'/>
+<polyline points='1002,56 1002,38 1016.0,38 1016.0,56 1030,56' fill='none' stroke='black'/>
+<polyline points='1030,56 1030,38 1044.0,38 1044.0,56 1058,56' fill='none' stroke='black'/>
+<polyline points='1058,56 1058,38 1072.0,38 1072.0,56 1086,56' fill='none' stroke='black'/>
+<text x='10' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>roce_state</text>
+<polygon points='190,77.0 194,68 214,68 218,77.0 214,86 194,86' fill='#e3efff' stroke='black'/>
+<text x='204.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>I</text>
+<polygon points='218,77.0 222,68 242,68 246,77.0 242,86 222,86' fill='#e3efff' stroke='black'/>
+<text x='232.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>L</text>
+<polygon points='246,77.0 250,68 270,68 274,77.0 270,86 250,86' fill='#e3efff' stroke='black'/>
+<text x='260.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>G</text>
+<polygon points='274,77.0 278,68 438,68 442,77.0 438,86 278,86' fill='#e3efff' stroke='black'/>
+<text x='358.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>CALC</text>
+<polygon points='442,77.0 446,68 466,68 470,77.0 466,86 446,86' fill='#e3efff' stroke='black'/>
+<text x='456.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>S</text>
+<polygon points='470,77.0 474,68 718,68 722,77.0 718,86 474,86' fill='#e3efff' stroke='black'/>
+<text x='596.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>HDR_WAIT</text>
+<polygon points='722,77.0 726,68 746,68 750,77.0 746,86 726,86' fill='#e3efff' stroke='black'/>
+<text x='736.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>I</text>
+<polygon points='750,77.0 754,68 774,68 778,77.0 774,86 754,86' fill='#e3efff' stroke='black'/>
+<text x='764.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>L</text>
+<polygon points='778,77.0 782,68 802,68 806,77.0 802,86 782,86' fill='#e3efff' stroke='black'/>
+<text x='792.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>G</text>
+<polygon points='806,77.0 810,68 1026,68 1030,77.0 1026,86 810,86' fill='#e3efff' stroke='black'/>
+<text x='918.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>CALC（等 hif_busy = 0）</text>
+<polygon points='1030,77.0 1034,68 1054,68 1058,77.0 1054,86 1034,86' fill='#e3efff' stroke='black'/>
+<text x='1044.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>S</text>
+<polygon points='1058,77.0 1062,68 1082,68 1086,77.0 1082,86 1062,86' fill='#e3efff' stroke='black'/>
+<text x='1072.0' y='81.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>H</text>
+<text x='10' y='111.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>pkt_commit</text>
+<line x1='190' y1='116' x2='414' y2='116' stroke='black' stroke-width='1.5'/>
+<line x1='414' y1='98' x2='414' y2='116' stroke='black'/>
+<line x1='414' y1='98' x2='442' y2='98' stroke='black' stroke-width='1.5'/>
+<line x1='442' y1='98' x2='442' y2='116' stroke='black'/>
+<line x1='442' y1='116' x2='1002' y2='116' stroke='black' stroke-width='1.5'/>
+<line x1='1002' y1='98' x2='1002' y2='116' stroke='black'/>
+<line x1='1002' y1='98' x2='1030' y2='98' stroke='black' stroke-width='1.5'/>
+<line x1='1030' y1='98' x2='1030' y2='116' stroke='black'/>
+<line x1='1030' y1='116' x2='1086' y2='116' stroke='black' stroke-width='1.5'/>
+<text x='10' y='141.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>hdr_trigger</text>
+<line x1='190' y1='146' x2='442' y2='146' stroke='black' stroke-width='1.5'/>
+<line x1='442' y1='128' x2='442' y2='146' stroke='black'/>
+<line x1='442' y1='128' x2='470' y2='128' stroke='black' stroke-width='1.5'/>
+<line x1='470' y1='128' x2='470' y2='146' stroke='black'/>
+<line x1='470' y1='146' x2='1030' y2='146' stroke='black' stroke-width='1.5'/>
+<line x1='1030' y1='128' x2='1030' y2='146' stroke='black'/>
+<line x1='1030' y1='128' x2='1058' y2='128' stroke='black' stroke-width='1.5'/>
+<line x1='1058' y1='128' x2='1058' y2='146' stroke='black'/>
+<line x1='1058' y1='146' x2='1086' y2='146' stroke='black' stroke-width='1.5'/>
+<text x='10' y='171.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>hif_busy[h]</text>
+<line x1='190' y1='176' x2='442' y2='176' stroke='black' stroke-width='1.5'/>
+<line x1='442' y1='158' x2='442' y2='176' stroke='black'/>
+<line x1='442' y1='158' x2='1002' y2='158' stroke='black' stroke-width='1.5'/>
+<line x1='1002' y1='158' x2='1002' y2='176' stroke='black'/>
+<line x1='1002' y1='176' x2='1030' y2='176' stroke='black' stroke-width='1.5'/>
+<line x1='1030' y1='158' x2='1030' y2='176' stroke='black'/>
+<line x1='1030' y1='158' x2='1086' y2='158' stroke='black' stroke-width='1.5'/>
+<text x='10' y='201.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>hif_not_busy_soon[h]</text>
+<line x1='190' y1='206' x2='750' y2='206' stroke='black' stroke-width='1.5'/>
+<line x1='750' y1='188' x2='750' y2='206' stroke='black'/>
+<line x1='750' y1='188' x2='1002' y2='188' stroke='black' stroke-width='1.5'/>
+<line x1='1002' y1='188' x2='1002' y2='206' stroke='black'/>
+<line x1='1002' y1='206' x2='1086' y2='206' stroke='black' stroke-width='1.5'/>
+<text x='10' y='231.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>o_axis_tdata[h]</text>
+<polygon points='190,227.0 194,218 466,218 470,227.0 466,236 194,236' fill='#f2f2f2' stroke='black'/>
+<text x='330.0' y='231.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#888' text-anchor='middle'>x</text>
+<polygon points='470,227.0 474,218 690,218 694,227.0 690,236 474,236' fill='#e3efff' stroke='black'/>
+<text x='582.0' y='231.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>header（前 8 拍）</text>
+<polygon points='694,227.0 698,218 718,218 722,227.0 718,236 698,236' fill='#e3efff' stroke='black'/>
+<text x='708.0' y='231.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>H|D</text>
+<polygon points='722,227.0 726,218 970,218 974,227.0 970,236 726,236' fill='#e3efff' stroke='black'/>
+<text x='848.0' y='231.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>資料 …</text>
+<polygon points='974,227.0 978,218 998,218 1002,227.0 998,236 978,236' fill='#e3efff' stroke='black'/>
+<text x='988.0' y='231.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' text-anchor='middle'>D</text>
+<polygon points='1002,227.0 1006,218 1082,218 1086,227.0 1082,236 1006,236' fill='#f2f2f2' stroke='black'/>
+<text x='1044.0' y='231.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12' fill='#888' text-anchor='middle'>x</text>
+<text x='10' y='261.0' font-family='DejaVu Sans Mono, Menlo, monospace' font-size='12'>o_axis_tlast[h]</text>
+<line x1='190' y1='266' x2='974' y2='266' stroke='black' stroke-width='1.5'/>
+<line x1='974' y1='248' x2='974' y2='266' stroke='black'/>
+<line x1='974' y1='248' x2='1002' y2='248' stroke='black' stroke-width='1.5'/>
+<line x1='1002' y1='248' x2='1002' y2='266' stroke='black'/>
+<line x1='1002' y1='266' x2='1086' y2='266' stroke='black' stroke-width='1.5'/>
+</svg>

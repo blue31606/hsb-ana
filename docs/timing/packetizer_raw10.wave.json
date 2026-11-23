@@ -1,0 +1,60 @@
+{
+  "title": "packetizer_top：RAW10 排程（pack_ctrl = 0x11F1FFF7：latency 1、max_addr F、ld_arr 0xFFF7；示意）",
+  "signal": [
+    {
+      "name": "clk",
+      "wave": "pppppppppppppppppppppp"
+    },
+    {
+      "name": "i_axis_tvalid",
+      "wave": "01...................."
+    },
+    {
+      "name": "o_axis_tready",
+      "wave": "01...01..............0"
+    },
+    {
+      "name": "state",
+      "wave": "x===..................",
+      "data": [
+        "IDLE",
+        "WAIT",
+        "RUN"
+      ]
+    },
+    {
+      "name": "ram_rd_addr",
+      "wave": "x=.===================",
+      "data": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "0",
+        "1",
+        "2",
+        "3"
+      ]
+    },
+    {
+      "name": "ld_nxt = ld_shift[0]",
+      "wave": "x1...01..............0"
+    },
+    {
+      "name": "pack_stall",
+      "wave": "0.....10.............."
+    }
+  ]
+}

@@ -215,3 +215,9 @@ event_vec = { i_sif_event[15:0], 11'h0, uart_irq, 2'b00(內部), spi_busy, i2c_b
 ```
 
 詳見 [event](../modules/event.md)。（[L528](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L528)）板級可以用 `i_sif_event` 把感測器事件送給 host。
+
+## 11. 系統層級文件
+
+- [端到端流程](../flow.md)：從上電到一個 frame 送達 host。
+- [效能分析](../performance.md)：頻寬、延遲、緩衝餘裕。
+- [完整暫存器索引](../registers/all-registers.md)。

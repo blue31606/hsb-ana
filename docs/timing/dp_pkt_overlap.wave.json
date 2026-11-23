@@ -1,0 +1,57 @@
+{
+  "title": "dp_pkt_top：header FSM 與前一個封包的資料傳送重疊（HOST_WIDTH = 64，示意）；I=IDLE L=LOAD_STS G=GRANT S=STORE H=HDR_WAIT",
+  "signal": [
+    {
+      "name": "clk",
+      "wave": "pppppppppppppppppppppppppppppppp"
+    },
+    {
+      "name": "roce_state",
+      "wave": "====.....==........====.......==",
+      "data": [
+        "I",
+        "L",
+        "G",
+        "CALC",
+        "S",
+        "HDR_WAIT",
+        "I",
+        "L",
+        "G",
+        "CALC（等 hif_busy = 0）",
+        "S",
+        "H"
+      ]
+    },
+    {
+      "name": "pkt_commit",
+      "wave": "0.......10...................10."
+    },
+    {
+      "name": "hdr_trigger",
+      "wave": "0........10...................10"
+    },
+    {
+      "name": "hif_busy[h]",
+      "wave": "0........1...................01."
+    },
+    {
+      "name": "hif_not_busy_soon[h]",
+      "wave": "0...................1........0.."
+    },
+    {
+      "name": "o_axis_tdata[h]",
+      "wave": "x.........=.......==........=x..",
+      "data": [
+        "header（前 8 拍）",
+        "H|D",
+        "資料 …",
+        "D"
+      ]
+    },
+    {
+      "name": "o_axis_tlast[h]",
+      "wave": "0...........................10.."
+    }
+  ]
+}

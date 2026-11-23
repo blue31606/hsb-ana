@@ -1,0 +1,196 @@
+# 完整暫存器索引（自動產生）
+
+本檔由 `tools/gen_allregs.py` 產生，請勿手動修改。
+
+所有 APB 可存取的暫存器依絕對位址排列（多實例的區塊列實例 0 的位址）。
+
+- 位元細節請點各區塊的文件連結；`regmap_pkg.sv` 內的暫存器另見 [regmap.md](regmap.md)（含原始碼註解比對）。
+- 類型：RW = 控制暫存器；RO = 狀態暫存器（`s_apb_reg` 的 index ≥ 32）；RW* = RTL 也會寫入；W = 只寫。
+- 未定義位址讀回 `0xBADADD12`（[apb.md](../modules/apb.md#watchdog)）。
+
+## 區塊總覽
+
+| 基底 | 區塊 | RTL | 間距 / 數量 | 暫存器數 |
+|---|---|---|---|---:|
+| `0x0000_0000` | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) | `glb_ctrl_top` | - | 30 |
+| `0x0000_0100` | [PTP Register](../modules/ptp.md#暫存器) | `ptp_top` | - | 18 |
+| `0x0000_0200` | [Control Bus Event](../modules/event.md#暫存器) | `ctrl_bus_evt_int` | - | 14 |
+| `0x0000_0300` | [ECB](../modules/rx_ls_parser.md#暫存器) | `ecb_rdwr_ctrl` | - | 7 |
+| `0x0000_1000` | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | `dp_pkt_top` | 0x40 / VP（最多 32 個） | 13 |
+| `0x0000_2000` | [事件序列 RAM（APB RAM 1）](../modules/event.md#2-序列器apb-時脈) | `ctrl_bus_evt_fsm` | 1024 word | 1 |
+| `0x0000_3000` | [RoCE QP RAM（APB RAM 2）](../modules/roce_ack.md) | `roce_ack` | - | 1 |
+| `0x0100_0000` | [Packetizer Register](../modules/packetizer.md#暫存器) | `packetizer_top` | 0x1_0000 / SIF RX（SENSOR_RX_IF_INST 個） | 6 |
+| `0x0100_0100` | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) | `data_gen` | 0x1_0000 / SIF RX（SENSOR_RX_IF_INST 個） | 7 |
+| `0x0120_0000` | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) | `tx_stream_buffer` | 0x1_0000 / SENSOR_TX_IF_INST | 8 |
+| `0x0200_0000` | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) | `rx_parser` | 0x1_0000 / host（HOST_IF_INST 個） | 12 |
+| `0x0200_0100` | [Ethernet Packet](../modules/eth_pkt.md#暫存器) | `eth_pkt` | 0x1_0000 / host（HOST_IF_INST 個） | 4 |
+| `0x0200_0300` | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) | `dp_pkt_top` | 0x1_0000 / host（HOST_IF_INST 個） | 7 |
+| `0x0300_0000` | [SPI](../modules/peripherals.md#spi--qspi) | `spi_ctrl_fsm` | -（SPI_INST 條匯流排共用） | 7 |
+| `0x0300_0200` | [I2C](../modules/peripherals.md#i2c) | `i2c_ctrl_fsm` | -（I2C_INST 條匯流排共用） | 8 |
+| `0x0300_0400` | [UART](../modules/peripherals.md#uart) | `uart_ctrl_fsm` | - | 7 |
+| `0x0600_0000` | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | `bridge_pkt_proc` | - | 3 |
+| `0x7000_0000` | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | `vsync_gen` | - | 6 |
+
+## 全部暫存器
+
+| 位址 | 名稱 | 類型 | 區塊 | 說明 |
+|---|---|---|---|---|
+| `0x0000_0000` | `glb_scratch` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0004` | `hsb_ctrl_0` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0008` | `hsb_ctrl_1` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_000C` | `gpio_o_0` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0010` | `gpio_o_1` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0014` | `gpio_o_2` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0018` | `gpio_o_3` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_001C` | `gpio_o_4` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0020` | `gpio_o_5` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0024` | `gpio_o_6` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0028` | `gpio_o_7` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_002C` | `gpio_t_0` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0030` | `gpio_t_1` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0034` | `gpio_t_2` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0038` | `gpio_t_3` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_003C` | `gpio_t_4` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0040` | `gpio_t_5` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0044` | `gpio_t_6` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0048` | `gpio_t_7` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0080` | `hsb_ver` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0084` | `hsb_date` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0088` | `hsb_stat` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_008C` | `gpio_i_0` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0090` | `gpio_i_1` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0094` | `gpio_i_2` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0098` | `gpio_i_3` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_009C` | `gpio_i_4` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_00A0` | `gpio_i_5` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_00A4` | `gpio_i_6` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_00A8` | `gpio_i_7` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0100` | `ptp_scratch` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0104` | `ptp_ctrl` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0108` | `ptp_ctrl_profile` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_010C` | `ptp_ctrl_dly` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0110` | `ptp_ctrl_dpll_cfg1` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0114` | `ptp_ctrl_dpll_cfg2` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0118` | `ptp_ctrl_avg_fact` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_011C` | `ptp_ctrl_domain` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0120` | `ptp_ctrl_pcp` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0180` | `ptp_sync_ts_0` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0184` | `ptp_sync_cf_0` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0188` | `ptp_sync_stat` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_018C` | `ptp_ofm` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0190` | `ptp_mean_dly` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0194` | `ptp_inc` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0198` | `ptp_fa_adj` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_019C` | `ptp_dly_cf_0` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_01A0` | `ptp_ip_dly_asymm` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0200` | `ctrl_evt_scratch` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0204` | `ctrl_evt_rising` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0208` | `ctrl_evt_falling` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_020C` | `ctrl_evt_clear` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0210` | `ctrl_evt_host_mac_addr_lo` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0214` | `ctrl_evt_host_mac_addr_hi` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0218` | `ctrl_evt_host_ip_addr` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_021C` | `ctrl_evt_host_udp_port` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0220` | `ctrl_evt_dev_udp_port` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0224` | `ctrl_evt_apb_interrupt_en` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0228` | `ctrl_evt_apb_timeout` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_022C` | `ctrl_evt_sw_event` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0230` | `ctrl_evt_vlan` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0280` | `ctrl_evt_stat` | RO | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0300` | `ecb_scratch` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0304` | `ecb_addr_lsb` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0308` | `ecb_addr_msb` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_030C` | `ecb_rkey` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0310` | `ecb_pkey` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0314` | `ecb_dest_qp` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0380` | `ecb_stat` | RO | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_1000` | `DP_QP` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [23:0] dest QP（CoE：[5:0] channel）、[24] 1722B、[31:25] line 長度 log2 |
+| `0x0000_1004` | `DP_RKEY` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | RETH R_Key |
+| `0x0000_1008` | `DP_PAGE_LSB` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [31:7] buffer 起點（page） |
+| `0x0000_100C` | `DP_PAGE_MSB` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [0] 起點 page bit 25、[31:1] VA[63:33] |
+| `0x0000_1010` | `DP_PAGE_INC` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | buffer 間距（page） |
+| `0x0000_1014` | `DP_MAX_BUFF` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [27:16] 起始 / [11:0] 結束 buffer 指標 |
+| `0x0000_1018` | `DP_BUFFER_LENGTH` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | frame byte 數 |
+| `0x0000_1020` | `DP_HOST_MAC_LOW` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | host MAC [31:0] |
+| `0x0000_1024` | `DP_HOST_MAC_HIGH` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | host MAC [47:32] |
+| `0x0000_1028` | `DP_HOST_IP` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | host IPv4 |
+| `0x0000_102C` | `DP_HOST_UDP_PORT` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [15:0] UDP 埠、[16] md_disable |
+| `0x0000_1034` | `DP_VLAN` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [15:0] TCI、[16] 插入 VLAN |
+| `0x0000_103C` | `PSN` | RW* | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | FSM 回寫目前 PSN |
+| `0x0000_2000` | `程式 / 資料` | RW | [事件序列 RAM（APB RAM 1）](../modules/event.md#2-序列器apb-時脈) | 每個事件一段序列：POLL / WRITE / READ / NOP；READ 結果寫回 RAM |
+| `0x0000_3000` | `QP 資訊` | RW | [RoCE QP RAM（APB RAM 2）](../modules/roce_ack.md) | SIF_TX_ROCE_RC_ENABLE 時使用；只有 host 0 的 RAM 回應讀取 |
+| `0x0100_0000` | `pack_scratch` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0004` | `pack_ram_addr` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0008` | `pack_ram_data` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_000C` | `pack_ctrl` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0080` | `pack_tvalid_cnt` | RO | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0084` | `pack_psn_cnt` | RO | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0100` | `sen_rx_data_gen_scratch` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0104` | `sen_rx_data_gen_ena` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0108` | `sen_rx_data_gen_mode` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_010C` | `sen_rx_data_gen_size` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0110` | `sen_rx_data_gen_output_rate` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0114` | `sen_rx_data_gen_pps_sync` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0124` | `sen_rx_prbs_seed` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0120_0000` | `ctrl` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) | [0] 輸出啟用、[1] pause、[2] 程式化門檻、[4] 統計 reset、[8] 除錯清空 |
+| `0x0120_0004` | `sw_almost_full_thresh` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
+| `0x0120_0008` | `sw_almost_empty_thresh` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
+| `0x0120_000C` | `host_pause_mapping` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) | 哪些 host 埠送 PAUSE |
+| `0x0120_0010` | `pause_quanta` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) | [15:0] |
+| `0x0120_0080` | `high_watermark` | RO | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
+| `0x0120_0084` | `low_watermark` | RO | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
+| `0x0120_0088` | `status` | RO | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) | [1] overflow、[0] underflow |
+| `0x0200_0000` | `inst_dec_scratch` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0004` | `inst_dec_ctrl` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0008` | `lpbk_udp_port` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_000C` | `roce_ecb_dest_qp` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0010` | `inst_dec_rsvd_1` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0014` | `inst_dec_rsvd_2` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0018` | `static_hif_qp` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_001C` | `inst_dec_ack_ctrl` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0020` | `ecb_udp_port` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0024` | `stx_udp_port` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0080` | `inst_dec_stat` | RO | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0084` | `ipv4_chksum_err_cnt` | RO | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0100` | `eth_pkt_scratch` | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0104` | `eth_pkt_ctrl` | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0108` | `eth_pkt_hp_cnt` | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0180` | `eth_pkt_stat` | RO | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0300` | `dp_pkt_scratch` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0304` | `dp_pkt_len` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0308` | `dp_pkt_dev_udp_port` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_030C` | `dp_pkt_vip_mask` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0310` | `dp_pkt_crc_xor` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0314` | `dp_pkt_1722B` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0380` | `dp_pkt_stat` | RO | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0300_0000` | `ctrl` | RW | [SPI](../modules/peripherals.md#spi--qspi) | [0] start |
+| `0x0300_0004` | `bus_en` | RW | [SPI](../modules/peripherals.md#spi--qspi) | 選擇匯流排 |
+| `0x0300_0008` | `len` | RW | [SPI](../modules/peripherals.md#spi--qspi) | [15:0] 寫入 / [31:16] 讀取 byte 數 |
+| `0x0300_000C` | `cfg` | RW | [SPI](../modules/peripherals.md#spi--qspi) | [3:0] prescaler、[5:4] mode、[9:8] 資料線寬度 |
+| `0x0300_0010` | `cmd` | RW | [SPI](../modules/peripherals.md#spi--qspi) | [7:0] turnaround、[15:8] 命令 byte 數 |
+| `0x0300_0080` | `status` | RO | [SPI](../modules/peripherals.md#spi--qspi) | [0] busy、[1] 命令錯誤、[4] done |
+| `0x0300_0100` | `data` | RW | [SPI](../modules/peripherals.md#spi--qspi) | 資料緩衝 |
+| `0x0300_0200` | `ctrl` | RW | [I2C](../modules/peripherals.md#i2c) | [0] start、[1] 10-bit 位址、[25:16] 裝置位址 |
+| `0x0300_0204` | `bus_en` | RW | [I2C](../modules/peripherals.md#i2c) | 選擇匯流排 |
+| `0x0300_0208` | `len` | RW | [I2C](../modules/peripherals.md#i2c) | [15:0] 寫入 / [31:16] 讀取 byte 數 |
+| `0x0300_020C` | `clk_cnt` | RW | [I2C](../modules/peripherals.md#i2c) | [15:0] SCL 分頻 |
+| `0x0300_0210` | `stretch_timeout` | RW | [I2C](../modules/peripherals.md#i2c) | reset 5,000,000 |
+| `0x0300_0214` | `num_trans` | RW | [I2C](../modules/peripherals.md#i2c) | [7:0] |
+| `0x0300_0280` | `status` | RO | [I2C](../modules/peripherals.md#i2c) | [0] busy、[2] arbitration lost、[3] NACK、[4] done |
+| `0x0300_0300` | `data` | RW | [I2C](../modules/peripherals.md#i2c) | 資料緩衝 |
+| `0x0300_0400` | `ctrl` | RW | [UART](../modules/peripherals.md#uart) | 啟用、TX / RX、loopback、資料位元、parity、FIFO reset、stop bit |
+| `0x0300_0404` | `baud / thresh` | RW | [UART](../modules/peripherals.md#uart) | [15:0] 鮑率除數、[31:16] FIFO 門檻 |
+| `0x0300_0408` | `int_en` | RW | [UART](../modules/peripherals.md#uart) |  |
+| `0x0300_040C` | `int_clr` | RW | [UART](../modules/peripherals.md#uart) |  |
+| `0x0300_0480` | `status` | RO | [UART](../modules/peripherals.md#uart) |  |
+| `0x0300_0484` | `int_status` | RO | [UART](../modules/peripherals.md#uart) |  |
+| `0x0300_0540` | `tx_data` | W | [UART](../modules/peripherals.md#uart) |  |
+| `0x0600_0000` | `broadcast_ports` | RW | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | [NUM_HOST-1:0] 廣播 / PTP 埠 |
+| `0x0600_0004` | `host0_fwd_mask` | RW | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | index 2h+1：host h 可轉送的 host 埠 |
+| `0x0600_0008` | `host0_sub_mask` | RW | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | index 2h+2：host h 訂閱的 SIF 埠 |
+| `0x7000_0000` | `VSYNC_CONTROL` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | [0] 啟用 |
+| `0x7000_0004` | `VSYNC_FREQUENCY` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | [3:0] 模式 |
+| `0x7000_0008` | `VSYNC_DELAY` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | 相對秒起點的延遲（ns） |
+| `0x7000_000C` | `VSYNC_START` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | [0] 初始電位 |
+| `0x7000_0010` | `VSYNC_EXPOSURE` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | 脈衝寬度 |
+| `0x7000_0014` | `VSYNC_GPIO` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | [9:0] GPIO 多工 |
