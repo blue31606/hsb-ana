@@ -1,0 +1,59 @@
+{
+ "title": "tx_stream_buffer：預填、輸出、Pause 遲滯（FIFO_DEPTH=4096，預設門檻，示意）",
+ "signal": [
+  {
+   "name": "tx_data_output_ena",
+   "wave": "01......................"
+  },
+  {
+   "name": "i_axis_tvalid (HIF)",
+   "wave": "0.1.0.1.0.1.0.1...0.1.0."
+  },
+  {
+   "name": "buffer_count",
+   "wave": "=.=.=.=.=.=.=.=...=.=.=.",
+   "data": [
+    "0",
+    "1k",
+    "1k",
+    "2k",
+    "2k",
+    "3k",
+    "2.6k",
+    "3.2k",
+    "3.1k",
+    "1k",
+    "1.5k",
+    "1k"
+   ]
+  },
+  {
+   "name": "buffer_afull (≥3072)",
+   "wave": "0.........10...1..0....."
+  },
+  {
+   "name": "afull_seen",
+   "wave": "0.........1............."
+  },
+  {
+   "name": "afull_seen_sync",
+   "wave": "0..........1............"
+  },
+  {
+   "name": "o_axis_tvalid (SIF)",
+   "wave": "0..........1............"
+  },
+  {
+   "name": "buffer_aempty (≤1024)",
+   "wave": "1.0.................1.0."
+  },
+  {
+   "name": "pause (pause_ena=1)",
+   "wave": "0..........1.........0.."
+  },
+  {
+   "name": "o_stx_is_ready",
+   "wave": "1..........0.........1.."
+  }
+ ]
+}

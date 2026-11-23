@@ -1,0 +1,14 @@
+{
+  "title": "sensor_tx_pkt_proc：去 54 byte header 與 4 byte ICRC（HOST_WIDTH=64，示意）",
+  "signal": [
+    {"name": "clk",                  "wave": "pppppppppppppppppp"},
+    {"name": "i_axis_tvalid",        "wave": "01.........0......"},
+    {"name": "i_axis_tdata",         "wave": "x==========x......", "data": ["H0","H1","H2","H3","H4","H5","H6|P","P","P","P+I"]},
+    {"name": "i_axis_tlast",         "wave": "0.........10......"},
+    {"name": "drp_axis_tvalid",      "wave": "0.......1...0....."},
+    {"name": "drp_axis_tdata",       "wave": "x.......====x.....", "data": ["P0","P1","P2","P3+I"]},
+    {"name": "raw_axis_tvalid",      "wave": "0.........1...0..."},
+    {"name": "raw_axis_tlast",       "wave": "0............10..."},
+    {"name": "o_axis_tvalid[QP→i]",  "wave": "0.........1...0..."}
+  ]
+}

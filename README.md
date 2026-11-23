@@ -1,50 +1,99 @@
 # hsb-ana — NVIDIA Holoscan Sensor Bridge FPGA IP 分析
 
-這份文件分析 NVIDIA Holoscan Sensor Bridge（HSB）的 FPGA IP（`fpga/nv_hsb_ip`）。分析的目的是支援 IEEE 1722（AVTP）與 HSB 的整合工作。
+本 repo 分析 NVIDIA Holoscan Sensor Bridge（HSB）的 FPGA IP（`fpga/nv_hsb_ip`）。目標是把 HSB 的 Ethernet RX 路徑改成 IEEE 1722（AVTP）Listener，把收到的資料送到 MIPI CSI-2 TX。
+
+分析重點因此放在 **Ethernet → Sensor TX** 這條路徑：這條路徑上的模組逐行分析，其他模組只到結構層級。
 
 ## 分析基準
 
 | 項目 | 值 |
 |---|---|
-| 上游 repo | https://github.com/nvidia-holoscan/holoscan-sensor-bridge |
-| 版本 | `VERSION` = 3.0.0 |
-| Commit | `41cecaa81ab906a55e7ec22e5e6989f7e602a4c8`（2026-11-09） |
-| IP 版本常數 | `HOLOLINK_REV = 16'h2609`、`HOLOLINK_BACKWARD_COMPAT_REV = 16'h2603` |
-| 參考板級設定 | `fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/HOLOLINK_def.svh` |
+| 上游 repo | [nvidia-holoscan/holoscan-sensor-bridge](https://github.com/nvidia-holoscan/holoscan-sensor-bridge) |
+| 版本 | 3.0.0 |
+| Commit | [`41cecaa`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/tree/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8)（2026-11-09） |
+| IP 版本常數 | `HOLOLINK_REV = 16'h2609` |
+| 參考板級設定 | Lattice CPNX100（`fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/HOLOLINK_def.svh`） |
 
-## 文件結構
+文件中所有原始碼連結都固定在這個 commit，上游更新後連結不會失效。
 
-文件由粗到細排列。先讀 01，再依需要讀各個 RTL 章節。
+## 閱讀順序
 
-| 文件 | 內容 | 層級 |
-|---|---|---|
-| [01-block-view.md](docs/01-block-view.md) | 頂層方塊圖、時脈域、資料路徑、APB 位址空間、初始化流程 | 廣（block view） |
-| [02-rtl-host-rx.md](docs/02-rtl-host-rx.md) | `rx_parser`、`rx_ls_parser`、ECB、BOOTP/ARP/Ping | 細（RTL） |
-| [03-rtl-sensor-tx.md](docs/03-rtl-sensor-tx.md) | Ethernet → Sensor TX：`sensor_tx_pkt_proc`、`tx_stream_buffer`、`pause_gen` | 細（RTL） |
-| [04-rtl-dataplane.md](docs/04-rtl-dataplane.md) | Sensor RX → Ethernet：`packetizer_top`、`dp_pkt_top`（RoCEv2 / 1722B CoE）、`eth_pkt` | 細（RTL） |
-| [05-rtl-infra.md](docs/05-rtl-infra.md) | Reset、APB interconnect、PTP、事件、周邊、Bridge 模式 | 細（RTL） |
-| [06-1722-integration-notes.md](docs/06-1722-integration-notes.md) | 對 1722 Listener（Ethernet → MIPI）整合的觀察與修改點 | 應用 |
+1. **[架構總覽](docs/architecture/overview.md)**：頂層方塊圖、時脈域、資料路徑、位址空間、開機流程。
+2. **Listener 路徑模組**（依資料流順序，逐行分析）：
 
-## 分析深度
+   | 順序 | 模組 | 功能 |
+   |---|---|---|
+   | 1 | [`rx_parser`](docs/modules/rx_parser.md) | Header 解析、分類、store-and-forward、VLAN 移除 |
+   | 2 | [`roce_ack`](docs/modules/roce_ack.md) | RoCE RC 的 PSN 檢查、ACK/NAK、背壓 |
+   | 3 | [`sensor_tx_pkt_proc`](docs/modules/sensor_tx_pkt_proc.md) | 去 header、依 QP 選感測器 |
+   | 4 | [`tx_stream_buffer`](docs/modules/tx_stream_buffer.md) | 雙時脈 FIFO、預填、PAUSE（含 `axis_buffer_tx`、`pause_gen`） |
+   | 5 | [`eth_pkt`](docs/modules/eth_pkt.md) | TX 仲裁、VLAN 插入、MAC 逾時 |
 
-每個模組的分析深度不同。下表說明哪些部分逐行讀過，哪些只讀了結構。
+3. **其他模組**：
 
-| 深度 | 模組 |
+   | 模組 | 深度 |
+   |---|---|
+   | [`rx_ls_parser` / `ecb_rdwr_ctrl`](docs/modules/rx_ls_parser.md) | 主要邏輯 |
+   | [`dp_pkt_top`（含 1722B Talker）](docs/modules/dp_pkt_top.md) | 主要邏輯 |
+   | [`lib_axis` 共用元件](docs/modules/lib_axis.md) | 修改 Listener 時會用到的元件 |
+   | [其他模組](docs/modules/others.md) | 結構層級 |
+
+4. **參考資料**：
+   - [暫存器表](docs/registers/regmap.md)（由 `tools/gen_regmap.py` 自動產生）
+   - [位址空間與 RAM](docs/registers/memory-map.md)
+   - [時序圖](docs/timing/)
+
+5. **設計提案**：[1722 Listener 整合設計](design/1722-listener.md)
+
+6. **[驗證狀態](VERIFICATION.md)**：每項結論是怎麼確認的、哪些還沒確認。
+
+## 模組文件格式
+
+每份模組文件都用同一個章節順序：
+
+| 章節 | 內容 |
 |---|---|
-| 逐行 | `HOLOLINK_top`、`rx_parser`、`sensor_tx_pkt_proc`、`tx_stream_buffer`、`eth_pkt`（仲裁與輸出部分） |
-| 主要邏輯 | `rx_ls_parser`、`ecb_rdwr_ctrl`（解析與命令部分）、`dp_pkt_top`（CoE header 部分）、`apb_intc_top`（位址解碼） |
-| 結構與註解 | `packetizer_top`、`ptp_top`、`bootp`、`ctrl_bus_evt_*`、`routing_table`、`bridge_pkt_proc`、`reset_gen`、`glb_ctrl_top` |
-| 未讀 | `i2c`、`spi`、`uart` 內部、`lib_axis` 大部分元件、`roce_ack` 內部、各板級 top |
+| 概要 | 一句話功能、原始碼連結、分析深度 |
+| 參數 | parameter / localparam |
+| 介面 | port 表 |
+| 內部結構 | Mermaid 方塊圖 |
+| 行為 | 依處理順序說明，附原始碼行號 |
+| 時序 | 時序圖（如果有） |
+| 暫存器 | 暫存器表 |
+| 注意事項 | 限制、原始碼的不一致、可能的問題 |
+| 與 1722 Listener 的關係 | 整合時要改什麼 |
 
-文件中標記「推斷」的內容沒有逐行驗證，使用前請對照原始碼。
+## 工具
 
-## 命名慣例
+| 工具 | 用途 |
+|---|---|
+| `tools/gen_regmap.py` | 從 `regmap_pkg.sv` 產生暫存器表，並比對原始碼註解的位址 |
+| `tools/wave.py` | 把 `docs/timing/*.wave.json`（WaveDrom 子集）轉成 SVG。GitHub 不支援 WaveDrom，所以 SVG 也一併 commit |
 
-- **HIF**：Host Interface，FPGA 與 Ethernet MAC 之間的 AXIS 介面。
-- **SIF**：Sensor Interface，FPGA 與感測器（例如 MIPI CSI-2 RX/TX）之間的 AXIS 介面。
-- **SIF RX**：感測器 → FPGA（相機資料進來）。
-- **SIF TX**：FPGA → 感測器（Ethernet 資料出去給感測器端）。
-- **ECB**：HSB 的控制封包協定（Ethernet Control Bus），用 UDP 讀寫暫存器。
-- **LS**：Low Speed，控制類封包（ECB、BOOTP、ARP、Ping、Loopback）走的 8-bit 路徑。
-- **VP**：Virtual Port，`packetizer` 拆出來的子串流。
-- **CoE**：Camera over Ethernet，HSB 用 IEEE 1722B 實作的資料平面格式。
+重新產生：
+
+```sh
+git clone https://github.com/nvidia-holoscan/holoscan-sensor-bridge ../holoscan-sensor-bridge
+git -C ../holoscan-sensor-bridge checkout 41cecaa81ab906a55e7ec22e5e6989f7e602a4c8
+python3 tools/gen_regmap.py ../holoscan-sensor-bridge > docs/registers/regmap.md
+python3 tools/wave.py docs/timing/*.wave.json
+```
+
+## 名詞
+
+| 名詞 | 意義 |
+|---|---|
+| HIF | Host Interface。FPGA 與 Ethernet MAC 之間的 AXIS 介面 |
+| SIF RX / SIF TX | Sensor Interface。感測器 → FPGA / FPGA → 感測器 |
+| STX | Sensor TX 路徑：Ethernet 資料送到 SIF TX |
+| LS | Low Speed。控制封包（ECB、BOOTP、ARP、Ping、Loopback）走的 8-bit 路徑 |
+| ECB | HSB 的暫存器讀寫協定（UDP 8192） |
+| VP | Virtual Port。packetizer 拆出的子串流 |
+| CoE | Camera over Ethernet。HSB 用 IEEE 1722B 實作的資料格式 |
+
+## 版本紀錄
+
+| 版本 | Commit | 說明 |
+|---|---|---|
+| v1 | `2a6cf26` | 依資料路徑分章的第一版 |
+| v2 | 目前版本 | 改為每個模組一份文件；Listener 路徑逐行分析；加入時序圖、permalink、自動產生的暫存器表、驗證狀態；設計提案移到 `design/` |

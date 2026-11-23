@@ -1,0 +1,17 @@
+{
+  "title": "rx_parser：收包 → 分類 → store-and-forward 讀出（HOST_WIDTH=64、10 beat 封包，示意）",
+  "signal": [
+    {"name": "clk",                 "wave": "pppppppppppppppppppppppp"},
+    {"name": "i_axis_rx_tvalid",    "wave": "01.........0............"},
+    {"name": "i_axis_rx_tdata",     "wave": "x==========x............", "data": ["B0","B1","B2","B3","B4","B5","B6","B7","B8","B9"]},
+    {"name": "i_axis_rx_tlast",     "wave": "0.........10............"},
+    {"name": "hdr_valid",           "wave": "0........10............."},
+    {"name": "proc_pipeline[0]",    "wave": "0.........10............"},
+    {"name": "fcs_buffer.wr",       "wave": "0.........10............"},
+    {"name": "proc_pipeline[4]",    "wave": "0.............10........"},
+    {"name": "hdr_ready",           "wave": "0...............10......"},
+    {"name": "hdr_rden",            "wave": "0...............10......"},
+    {"name": "buf_axis_tready",     "wave": "0................1......"},
+    {"name": "o_*_axis_tvalid",     "wave": "0.................1....."}
+  ]
+}
