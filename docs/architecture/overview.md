@@ -27,54 +27,74 @@ host 軟體裡已經有 SIF TX 的使用者：JESD（`src/hololink/core/jesd.cpp
 
 ## 2. 頂層方塊圖
 
-非 Bridge 模式（沒有定義 `BRIDGE_IF_INST`）。每個 host 埠各有一份 `rx_parser` 與 `eth_pkt`；`rx_ls_parser`、`sensor_tx_pkt_proc`、`dp_pkt_top`、`ptp_top` 只有一份。
+非 Bridge 模式（沒有定義 `BRIDGE_IF_INST`）。圖中方塊依實例化次數分三種外框：
+
+- **雙框** `[[ ]]`：每個 host 埠一份（`HOST_IF_INST` 份）。
+- **圓角** `( )`：每個感測器介面一份（`SENSOR_RX_IF_INST` / `SENSOR_TX_IF_INST` 份）。
+- **方框** `[ ]`：全系統一份。
 
 ```mermaid
 flowchart LR
-  MACRX(["HIF RX<br/>i_hif_axis_*"])
-  MACTX(["HIF TX<br/>o_hif_axis_*"])
-  SIFRX(["SIF RX<br/>i_sif_axis_*"])
-  SIFTX(["SIF TX<br/>o_sif_axis_*"])
+  MACRX(["HIF RX × H"])
+  MACTX(["HIF TX × H"])
+  SIFRX(["SIF RX × S"])
+  SIFTX(["SIF TX × T"])
 
-  subgraph RX["Host RX（每個 host 埠一份）"]
-    RXP["rx_parser<br/>header 解析・分類・<br/>store-and-forward・VLAN 移除"]
-    RACK["roce_ack<br/>(SIF_TX_ROCE_RC_ENABLE)"]
+  subgraph PERHOST["每個 host 埠 h"]
+    RXP[["rx_parser<br/>解析・分類・store-and-forward<br/>（含 roce_ack：RC 時）"]]
+    ETH[["eth_pkt<br/>6 埠固定優先權仲裁<br/>VLAN 插入・逾時"]]
+    PG[["pause_gen<br/>802.3x PAUSE"]]
   end
 
-  subgraph CTRL["控制平面（共用）"]
-    LSP["rx_ls_parser<br/>ECB / BOOTP / ARP / Ping / Loopback / Event"]
-    APB["apb_intc_top<br/>APB interconnect"]
+  subgraph SHARED["全系統共用"]
+    LSP["rx_ls_parser<br/>H 埠 LS 仲裁<br/>ECB・BOOTP・ARP/Ping・Loopback・事件"]
+    PTP["ptp_top<br/>只接 host 0"]
+    DPP["dp_pkt_top<br/>1 個 header FSM<br/>輸出 H 個 host 埠"]
+    STXP["sensor_tx_pkt_proc<br/>H 埠輸入 → T 個 SIF TX"]
+    APB["apb_intc_top<br/>4 master → 解碼樹"]
+    GLB["glb_ctrl・sys_init・eeprom_info<br/>reset_gen"]
+    PERI["I2C・SPI・UART 控制器<br/>（各 1 個，多條匯流排多工）"]
   end
 
-  subgraph STX["Sensor TX 路徑（Host → 感測器）"]
-    STXP["sensor_tx_pkt_proc<br/>去 header・依 QP 分流"]
-    TSB["tx_stream_buffer × N<br/>雙時脈 FIFO・預填・PAUSE"]
-    PG["pause_gen（每個 host 埠）<br/>802.3x PAUSE"]
+  subgraph PERSIF["每個感測器介面"]
+    PKZ("packetizer_top<br/>重排・VP 拆分・跨時脈")
+    TSB("tx_stream_buffer<br/>雙時脈 FIFO・預填")
   end
-
-  subgraph DP["Data Plane（Sensor RX → Host）"]
-    PKZ["packetizer_top × N<br/>位元重排・VP 拆分・CDC"]
-    DPP["dp_pkt_top<br/>RoCEv2 / 1722B CoE"]
-  end
-
-  PTP["ptp_top<br/>1588 / gPTP"]
-  ETH["eth_pkt（每個 host 埠一份）<br/>優先權仲裁・VLAN 插入"]
 
   MACRX --> RXP
-  RXP --- RACK
-  RXP -- "LS (8-bit)" --> LSP
-  RXP -- "STX (RoCE)" --> STXP
-  RXP -- "PTP" --> PTP
-  RACK -- "ACK/NAK" --> ETH
+  RXP -- "LS 8-bit" --> LSP
+  RXP -- "PTP（僅 h=0）" --> PTP
+  RXP -- "STX" --> STXP
   STXP --> TSB --> SIFTX
-  TSB -- "pause req" --> PG --> ETH
-  TSB -. "stx_is_ready" .-> RACK
-  SIFRX --> PKZ --> DPP --> ETH
-  LSP -- "LS 回應" --> ETH
-  PTP --> ETH
+  TSB -- "pause 請求" --> PG
+  SIFRX --> PKZ --> DPP
+  DPP -- "第 0 埠" --> ETH
+  PTP -- "第 1 埠（僅 h=0）" --> ETH
+  RXP -- "第 2 埠 ACK/NAK" --> ETH
+  LSP -- "第 3 埠" --> ETH
+  PG -- "第 4 埠" --> ETH
   ETH --> MACTX
-  LSP -- "ECB → APB master" --> APB
+  LSP -- "ECB" --> APB
+  GLB -- "sys_init / eeprom" --> APB
+  APB --> PERI
 ```
+
+實例化次數（[`HOLOLINK_top.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv)）：
+
+| 模組 | 份數 | 迴圈 / 位置 |
+|---|---|---|
+| `rx_parser`（含 `roce_ack`） | H | `gen_rx_parser`（[L379](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L379)） |
+| `eth_pkt` | H | `gen_eth_pkt`（[L922](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L922)） |
+| `pause_gen` | H | `gen_pause`（[L1739](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L1739)） |
+| `packetizer_top`、`data_gen` | S | `gen_pack_inst`、`gen_data_gen_inst` |
+| `tx_stream_buffer` | T | `gen_stx_buf`（[L1680](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L1680)） |
+| `rx_ls_parser`（含 `ecb_rdwr_ctrl`、`bootp`、`arp_ping_pkt_proc`、`ctrl_bus_evt_int` 各 1 份）、`ptp_top`、`dp_pkt_top`、`sensor_tx_pkt_proc`、`apb_intc_top`、`glb_ctrl_top`、`sys_init`、`eeprom_info`、`reset_gen`、I2C / SPI / UART 控制器 | 1 | |
+
+共用資源對效能的影響：
+
+- `dp_pkt_top` 只有一個 header FSM，所有 host 埠的 Data Plane 封包都要排隊經過它（[performance §3](../performance.md#3-hsb-內部的封包間隔推斷)）。
+- `rx_ls_parser` 把所有 host 埠的控制封包合成一條 8-bit 路徑；它的輸出是一條共用的串流，只有 `tvalid` 依 host 分開（[L922–L960](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L922-L960) 中 `lso_axis_tdata` 沒有 index）。
+- PTP 只在 host 0 收發：其他 host 埠的 PTP 輸出固定為 0（[L733–L740](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L733-L740)），`eth_pkt` 第 1 埠的 `tvalid` 也只在 host 0 接通（`ptp_tx_axis_tvalid_gated`，[L680–L687](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L680-L687)）。
 
 ## 3. 時脈域
 
@@ -86,15 +106,64 @@ flowchart LR
 | `i_sif_rx_clk[n]` | 每個 SIF RX 一個 | 由感測器 IP 提供 |
 | `i_sif_tx_clk[n]` | 每個 SIF TX 一個；`tx_stream_buffer` 讀出端 | 由感測器 IP 提供 |
 
-跨時脈的位置：
+### 跨時脈地圖
 
-| 位置 | 方向 | 方式 |
-|---|---|---|
-| `packetizer_top` | SIF RX → HIF | 內部 FIFO |
-| `tx_stream_buffer` / `axis_buffer_tx` | HIF → SIF TX | `dc_fifo`（`DUAL_CLOCK = 1`） |
-| 每個模組的 `s_apb_reg` | APB → 模組時脈 | `SYNC_CLK_HIF_APB` 定義時省略 |
-| `streaming_cdc` ×2（[L1008–L1034](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L1008-L1034)） | PTP → HIF、PTP → APB | 80 bit：48 bit 秒 + 32 bit 奈秒 |
-| `init_done`（[L583](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L583)） | APB → HIF | `data_sync` |
+```mermaid
+flowchart LR
+  subgraph SIFRXD["SIF RX 時脈（每個感測器）"]
+    PKZS["packetizer 輸入・排序網路"]
+  end
+  subgraph HIFD["HIF 時脈"]
+    RXPH["rx_parser・rx_ls_parser・ECB 封包端"]
+    DPPH["dp_pkt_top・eth_pkt"]
+    STXH["sensor_tx_pkt_proc"]
+    PTPI["ptp_ingress 解析"]
+  end
+  subgraph PTPD["PTP 時脈"]
+    PTPT["ptp_timer・ptp_calc・dpll・ptp_dly"]
+  end
+  subgraph APBD["APB 時脈"]
+    APBH["apb_intc_top・所有 s_apb_reg 的 APB 端<br/>sys_init・eeprom_info・I2C/SPI/UART・事件序列器"]
+  end
+  subgraph SIFTXD["SIF TX 時脈（每個感測器）"]
+    TSBO["tx_stream_buffer 讀出端"]
+  end
+
+  PKZS -- "VP axis_buffer（dc_fifo）<br/>SOF：pulse_sync" --> DPPH
+  DPPH -- "VP 0 tlast：pulse_sync" --> PKZS
+  STXH -- "axis_buffer_tx（dc_fifo）<br/>封包計數：pulse_sync" --> TSBO
+  PTPI -- "ptp_ingress axis_buffer（dc_fifo）" --> PTPT
+  PTPT -- "Pdelay/Delay_Req 欄位：reg_cdc" --> RXPH
+  DPPH -- "TX 時間戳有效：pulse_sync" --> PTPT
+  PTPT -- "{秒, 奈秒}：streaming_cdc" --> DPPH
+  PTPT -- "{秒, 奈秒}：streaming_cdc" --> APBH
+  PTPT -- "PPS + 時間：reg_cdc" --> RXPH
+  RXPH -- "ECB 請求/回應：data_sync 握手" --> APBH
+  APBH -- "控制暫存器：reg_cdc（每個暫存器各一）" --> DPPH
+  DPPH -- "狀態暫存器：reg_cdc" --> APBH
+  APBH -- "init_done、eeprom IP valid：data_sync" --> RXPH
+  APBH -- "事件：data_sync / pulse_sync" --> RXPH
+```
+
+| 位置 | 方向 | 同步方式 | 原始碼 |
+|---|---|---|---|
+| `virtual_port` FIFO | SIF RX → HIF | `axis_buffer`（`DUAL_CLOCK = 1`，Gray code `dc_fifo`） | [`virtual_port.sv#L215`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/virtual_port.sv#L215) |
+| `packetizer_top` SOF / VP 0 結尾 | SIF RX ↔ HIF | `pulse_sync` | [`packetizer_top.sv#L224–L240`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L224-L240) |
+| packetizer RAM 寫入脈衝 | APB → SIF RX | `data_sync`（取下降緣） | [`packetizer_top.sv#L155`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L155) |
+| `tx_stream_buffer` / `axis_buffer_tx` | HIF → SIF TX | `dc_fifo` + 封包計數 `pulse_sync` | [`tx_stream_buffer.sv#L155`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/tx_stream_buffer.sv#L155)、[`axis_buffer_tx.sv#L280`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/axis_buffer_tx.sv#L280) |
+| `ptp_ingress` | HIF → PTP | `axis_buffer`（`DUAL_CLOCK = 1`） | [`ptp_ingress.sv#L116`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_ingress.sv#L116) |
+| PTP 送出請求欄位 | PTP → HIF | `reg_cdc`（一次 300 多 bit） | [`ptp_dly.sv#L165`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_dly.sv#L165) |
+| TX 時間戳有效 | HIF → PTP | `pulse_sync` | [`ptp_top.sv#L277`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_top.sv#L277) |
+| PTP 時間 | PTP → HIF、PTP → APB | `streaming_cdc`（80 bit） | [`HOLOLINK_top.sv#L1008–L1034`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L1008-L1034) |
+| BOOTP 用的 PPS 與時間 | PTP → HIF | `reg_cdc`（80 bit，PPS 觸發） | [`bootp.sv#L147`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/bootp/bootp.sv#L147) |
+| ECB → APB | HIF ↔ APB | 請求 / 回應各一組 `data_sync` 握手 | [`ecb_rdwr_ctrl.sv#L651–L692`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ecb/ecb_rdwr_ctrl.sv#L651-L692) |
+| 事件 | 模組 → APB → HIF | `data_sync`、`pulse_sync` | [`ctrl_bus_evt_int.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ctrl_bus_evt/ctrl_bus_evt_int.sv) |
+| 所有模組暫存器 | APB ↔ 模組時脈 | `s_apb_reg`：每個暫存器一個 `reg_cdc`；`SYNC_CLK_HIF_APB` 時省略 | [apb §s_apb_reg](../modules/apb.md#s_apb_reg) |
+| `s_apb_ram`（設定 RAM 等） | APB ↔ 模組時脈 | 讀寫請求 `data_sync` 握手 | [`s_apb_ram.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_ram.sv) |
+| `init_done`、EEPROM IP 有效 | APB → HIF | `data_sync`（只同步 valid，資料本身視為靜態） | [`HOLOLINK_top.sv#L583`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L583)、[`#L886`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L886) |
+| `hsb_stat` | → HIF | 8 bit `data_sync` | [`bootp.sv#L363`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/bootp/bootp.sv#L363) |
+
+各同步元件的內部與正確使用條件見 [lib §跨時脈元件](../modules/lib.md#cdc-元件)。
 
 ## 4. 編譯參數（`HOLOLINK_def.svh`）
 
@@ -135,6 +204,70 @@ flowchart LR
 | PTP | `rx_parser` → `ptp_top` → `eth_pkt` 第 1 埠（只有 host 埠 0） | [ptp](../modules/ptp.md) |
 | 事件 → Host | `i_sif_event` 等 → `ctrl_bus_evt_int` → 中斷封包 / 暫存器序列 | [event](../modules/event.md) |
 | Bridge（`BRIDGE_IF_INST`） | `rx_parser` ↔ `bridge_pkt_proc` ↔ SIF | [bridge](../modules/bridge.md) |
+
+### 控制平面全貌
+
+```mermaid
+flowchart LR
+  HOST(["host 軟體<br/>UDP 8192"]) --> RXP[["rx_parser<br/>依 dest UDP 埠分類"]]
+  RXP -- "LS 8-bit" --> ARB["rx_ls_parser<br/>H 埠輪流"]
+  ARB --> ECB["ecb_rdwr_ctrl<br/>解析命令・序號"]
+  ARB --> BOOTP["bootp<br/>（1 份，內部服務 H 個埠）"]
+  ARB --> ARP["arp_ping_pkt_proc"]
+  ECB -- "data_sync 握手" --> M0
+  subgraph APBTREE["APB（APB 時脈）"]
+    M0["m_apb[0] ECB"]
+    M1["m_apb[1] sys_init"]
+    M2["m_apb[2] eeprom_info"]
+    M3["m_apb[3] 事件序列器"]
+    SW["apb_switch 解碼樹<br/>+ watchdog（256 拍 → 0xBADADD12）"]
+    M0 & M1 & M2 & M3 --> SW
+  end
+  SW --> REGS["各模組 s_apb_reg<br/>reg_cdc 到模組時脈"]
+  SW --> RAMS["設定 RAM・事件 RAM・QP RAM"]
+  SW --> PER["I2C / SPI / UART → 感測器"]
+  SW --> USR["使用者 APB（板級）"]
+  EVT["事件向量<br/>i_sif_event・PTP・I2C…"] --> M3
+  EVT --> INT["中斷封包"] --> ARB
+  ECB -- "回應" --> ARB
+  ARB -- "第 3 埠" --> ETH[["eth_pkt"]] --> HOSTOUT(["host"])
+```
+
+| 步驟 | 模組 | 文件 |
+|---|---|---|
+| ECB 封包分類 | `rx_parser`：IPv4 / UDP、dest 埠 = `ecb_udp_port`（預設 8192） | [rx_parser](../modules/rx_parser.md) |
+| LS 仲裁與解析 | `rx_ls_parser`、`ecb_rdwr_ctrl` | [rx_ls_parser](../modules/rx_ls_parser.md) |
+| APB 存取 | `apb_intc_top`、`apb_switch`、`s_apb_reg` | [apb](../modules/apb.md) |
+| 自主存取 | `sys_init`（開機）、`eeprom_info`（開機）、事件序列器（事件觸發） | [boot_and_reset](../modules/boot_and_reset.md)、[event](../modules/event.md) |
+
+### Data Plane 全貌
+
+```mermaid
+flowchart LR
+  subgraph S0["感測器介面 s（SIF RX 時脈）"]
+    IN(["SIF RX AXIS<br/>tuser[0] bypass・tuser[1] line 結束"]) --> PT["packetizer_top FSM<br/>排程（ld_arr・latency）"]
+    PT --> SN["排序網路 + cycle select<br/>（或固定 pattern）"]
+    SN --> VPW["VP 寫入選擇"]
+  end
+  VPW --> VP0["VP FIFO 0<br/>dc_fifo"] & VP1["VP FIFO 1"]
+  subgraph HIF["HIF 時脈"]
+    VP0 & VP1 --> RR["rrarb<br/>依 vip_mask 分 host"]
+    RR --> FSM["header FSM<br/>設定 RAM・狀態 RAM・Eth RAM"]
+    FSM --> HDR["dp_pkt_hdr<br/>RoCE / CoE / metadata"]
+    RR --> DPK["dp_pkt × H<br/>payload 多工・補 0・frame CRC"]
+    HDR & DPK --> MRG["header 與 payload 拼接"] --> ICRC["roce_icrc"] --> ETH0[["eth_pkt 第 0 埠"]]
+    TS["dp_pkt_ts<br/>SOF 時間戳"] --> FSM
+  end
+  PT -. "SOF" .-> TS
+```
+
+| 階段 | 主要決策 | 文件 |
+|---|---|---|
+| 重排 | 每拍是否讀輸入（`ld_arr`）、輸出單位取自哪個歷史拍（cycle select）、寫哪個 VP | [packetizer](../modules/packetizer.md) |
+| 跨時脈 | VP FIFO 累積到約一個封包或 frame 結尾才放行 | [packetizer §6](../modules/packetizer.md#6-virtual-portvirtual_portsv) |
+| 仲裁 | 有 frame 結尾待送的 VP 優先；同一輪每個 VP 一次 | [dp_pkt_top §2](../modules/dp_pkt_top.md#2-vp--host-對應與仲裁) |
+| 封包化 | 位址、長度、PSN、最後封包、metadata | [dp_pkt_top §5–§9](../modules/dp_pkt_top.md#5-header-fsm) |
+| 傳出 | ICRC、Data Plane 優先權最高、每個封包後讓出 1 拍 | [roce](../modules/roce.md)、[eth_pkt](../modules/eth_pkt.md) |
 
 ## 6. `eth_pkt` 輸入埠分配
 

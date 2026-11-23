@@ -91,7 +91,7 @@ frame 完成通知（metadata 封包）在最後一個資料封包之後立即�
 | 緩衝 | 大小（CPNX100） | 滿時的行為 |
 |---|---|---|
 | `cam_rcvr` `axis_buffer` | 512 × 80 bit = 5 KB | `NO_BACKPRESSURE`：**資料遺失**，不會反壓到相機 |
-| packetizer → VP FIFO | 1006 × 64 bit ≈ 8 KB（MTU 4096）/ 356 × 64 bit ≈ 2.8 KB（MTU 1500） | 7/8 時 `pack_tready = 0`，反壓 SIF RX |
+| packetizer → VP FIFO | 1006 × 64 bit ≈ 8 KB（MTU 4096）/ 356 × 64 bit ≈ 2.8 KB（MTU 1500）；`dc_fifo` 實體深度補到 1024 / 512 筆，門檻仍以 1006 / 356 計算 | 7/8 時 `pack_tready = 0`，反壓 SIF RX |
 | `rx_parser` 輸入 FIFO | 2 × MTU | 溢位時 beat 遺失（[rx_parser 注意事項](modules/rx_parser.md#注意事項)） |
 | `tx_stream_buffer` | `SIF_TX_BUF_SIZE` × `SIF_TX_WIDTH`（CPNX100：4096 × 32 bit = 16 KB） | almost full 時送 802.3x PAUSE 給 host |
 
@@ -120,5 +120,6 @@ frame 完成通知（metadata 封包）在最後一個資料封包之後立即�
 | RX 內部延遲估計 | 以參數算出的固定拍數（[ptp §2](modules/ptp.md#2-接收時間戳)）；實際上跨時脈 FIFO 的佔用量會變動，每個時脈域約 ±1–2 拍 |
 | TX 時間戳位置 | `eth_pkt` 仲裁器，而不是線上的 SFD；MAC 內部延遲需要 `ptp_ctrl_dly` 補償 |
 | DPLL | `fa` 解析度約 6 ppb（[ptp §7](modules/ptp.md#7-首次同步與-dpll)） |
+| PTP 時間跨到 HIF | `streaming_cdc` 固定延遲約 3–4 個 HIF 時脈（約 20–40 ns），RTL 未補償；影響 metadata 的 SOF 時間與 CoE 時間戳（[lib §streaming_cdc](modules/lib.md#streaming_cdc)） |
 
 綜合起來，HSB 與 master 之間的同步誤差大約在數十奈秒等級，絕對偏差取決於 `ptp_ctrl_dly` 是否針對板級的 MAC / PHY 校正過。

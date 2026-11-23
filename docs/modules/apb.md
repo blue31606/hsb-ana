@@ -10,8 +10,8 @@ HSB 內部所有暫存器都掛在 32-bit APB 匯流排上。4 個 master（ECB�
 | [`apb_intc_top.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_intc_top.sv) | 486 | 解碼樹、watchdog | 逐行 |
 | [`apb_switch.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_switch.sv) | 226 | 多 master 仲裁 + 位址分派 | 逐行 |
 | [`s_apb_reg.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv) | 219 | 暫存器區塊 + CDC | 逐行 |
-| [`s_apb_ram.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_ram.sv) | 184 | APB 可讀寫、模組也可讀寫的 RAM | 結構 |
-| [`m_apb_reg.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/m_apb_reg.sv) | 169 | APB master：依序寫一串 `{addr, data}` | 結構 |
+| [`s_apb_ram.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_ram.sv) | 184 | APB 可讀寫、模組也可讀寫的 RAM | 逐行 |
+| [`m_apb_reg.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/m_apb_reg.sv) | 169 | APB master：依序寫一串 `{addr, data}` | 逐行 |
 | [`apb_ff.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_ff.sv) | 54 | APB 暫存級（時序） | 結構 |
 | [`apb_to_axi4l.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_to_axi4l.sv) | 147 | APB → AXI4-Lite 橋接，給板級使用者模組 | 結構 |
 | [`apb_adapter.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_adapter.sv) | 99 | 周邊資料匯流排轉接 | 結構 |
@@ -74,8 +74,21 @@ flowchart TB
 
 ## `s_apb_ram`
 
-APB 端與模組端都能存取的 RAM，用在 `dp_pkt` 設定 RAM（512 word）、事件序列 RAM（1024 word）與 RoCE QP RAM。模組端可以寫回（例如 `dp_pkt_top` 回寫 PSN、事件序列器寫回讀取結果）。
+[s_apb_ram.sv#L16–L184](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_ram.sv#L16-L184)：APB 端與模組端共用一個**單埠** block RAM，RAM 本身在模組時脈域。用在 `dp_pkt` 設定 RAM（512 word）、事件序列 RAM（1024 word）與 RoCE QP RAM。
+
+| 步驟 | 時脈域 | 行為 |
+|---|---|---|
+| 1 | APB | `penable` 時鎖住位址與資料，產生 `reg_wren` / `reg_rden`（電位，直到 `pready`） |
+| 2 | 模組 | `data_sync` 後得到 `reg_wren_sync` / `reg_rden_sync`，**APB 優先佔用 RAM 埠**：位址、資料、寫入致能都切到 APB 的值 |
+| 3 | 模組 | 下一拍設 `reg_rdy_prev`，鎖住讀回資料（超出範圍時為 `0xBADADD12`） |
+| 4 | APB | `reg_rdy_prev` 同步回來後回 `pready` |
+
+模組端的影響：
+
+- APB 存取期間與之後一拍，`o_rd_data_valid = 0`，模組讀到的資料無效。`dp_pkt_top` 的 `fsm_cnt` 只在 `cfg_ram_rd_valid` 時前進，所以會等待而不會讀錯。
+- 模組寫入（`i_wr_en`）在這段期間被忽略。`dp_pkt_top` 的 PSN 回寫在 `fsm_cnt == 15` 期間持續拉高 `wr_en`，而 `fsm_cnt` 這時也停住，所以 APB 結束後仍會寫入；若 host 剛好同時寫同一個 PSN word，最後的值是模組寫的那一個（R + I）。
 
 ## `m_apb_reg`
 
-APB master，依序寫 `N_REG` 筆 `{addr, data}`，筆與筆之間間隔 `N_DELAY` 拍。`sys_init` 用它執行 `init_reg`。
+[m_apb_reg.sv#L16–L169](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/m_apb_reg.sv#L16-L169)：`sys_init` 用的 APB master。`i_init` 上升緣（或 `N_DELAY` 計數到 1）時啟動，依序執行 `N_REG` 筆 `{addr, data, wren}`，每筆完成後等 `N_DELAY` 拍。`pserr` 只被記錄，不會中止序列；讀回值存在 `reg_rdbk` 但沒有輸出。
+

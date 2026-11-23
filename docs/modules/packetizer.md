@@ -176,6 +176,7 @@ FIFO 大小（[L24–L30](https://github.com/nvidia-holoscan/holoscan-sensor-bri
 |---|---|---|---|---|
 | `AE_FLAG` | `(MTU − 79) / (DOUT_WIDTH/8) + 1` | 503 | 178 | 63 |
 | 深度 | `2 × AE_FLAG` | 1006（約 8 KB） | 356（約 2.8 KB） | 126（約 8 KB） |
+| 實體深度（`dc_fifo` 補到 2 的次方） | | 1024 | 512 | 128 |
 | `AF_FLAG` | `((深度 + 1) / 8) × 7` | 875 | 308 | 105 |
 
 `AE_FLAG` 約等於一個封包的 payload（MTU 扣掉 79 byte header 預留），所以 FIFO 能放約 2 個封包的資料，almost-full 在 7/8。FIFO 設定 `NO_BACKPRESSURE = 1`，不會對寫入端背壓，防止溢位完全依賴上游看 `almost_full` 停止讀取（`pack_tready`）。排序網路管線約 `PACK_PIPE_COUNT + 3` 拍，遠小於 1/8 深度的餘裕。

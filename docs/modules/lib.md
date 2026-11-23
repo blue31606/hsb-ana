@@ -14,7 +14,7 @@
 | `vec_to_axis_dyn_len` | 120 | 同上，長度由輸入決定 | `ptp_egress` |
 | [`axis_drop`](#axis_drop) | 175 | 去掉封包開頭 N bit 並重新對齊 | `sensor_tx_pkt_proc`、`ptp_ingress`、`roce_icrc` |
 | [`axis_drop_tail`](#axis_drop_tail) | 171 | 去掉封包尾端 N bit | `sensor_tx_pkt_proc` |
-| `axis_insert` | 324 | 在固定 offset 插入 N bit（可逐封包啟用） | `eth_pkt`（VLAN） |
+| [`axis_insert`](#axis_insert) | 324 | 在固定 offset 插入 N bit（可逐封包啟用） | `eth_pkt`（VLAN） |
 | `axis_remove` | 425 | 在固定 offset 移除 N bit | `rx_parser`（VLAN） |
 | `axis_hdr` | 263 | 在封包前加 header | `rx_ls_parser` |
 | `axis_ftr` | 185 | 在封包後加 footer | `roce_icrc`（ICRC） |
@@ -84,6 +84,21 @@
 
 去掉尾端 `DROP_WIDTH` bit。用 `⌈DROP_WIDTH/DWIDTH⌉ + 1` 級延遲線，看到 `tlast` 後回頭調整最後一兩拍的 `tkeep` / `tlast`；最後一拍全部屬於被丟的部分時整拍不送。**沒有 `tready`**。
 
+## `axis_insert`
+
+[`axis_insert.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_insert.sv)（逐行）：在封包的第 `INSERT_OFFSET` bit 插入 `INSERT_WIDTH` bit，之後的資料整體往後移。`eth_pkt` 用 `INSERT_OFFSET = 96`、`INSERT_WIDTH = 32`：在兩個 MAC 位址之後插入 4 byte VLAN tag。
+
+合成時依參數算出插入點落在哪一拍、哪個位置，選用不同的狀態路徑（[L44–L71](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_insert.sv#L44-L71)）：
+
+| HIF 寬度 | 插入點 | 狀態路徑 | 說明 |
+|---|---|---|---|
+| 64 bit | 第 2 拍 bit 32（`D_CYCLES = 2`，剛好填滿到拍尾：`EVEN_FILL`） | `S_DATA → S_DATA_INSERT → S_REG_DATA …` | 第 2 拍輸出 `{VLAN, 原資料[31:0]}`，之後每拍輸出 `{本拍[31:0], 上一拍[63:32]}` |
+| 512 bit | 第 1 拍 bit 96，插入後仍在同一拍內（`ENCAPSULATED`） | `S_DATA_INSERT_DATA → S_REG_DATA …` | 第 1 拍輸出 `{原資料[479:96], VLAN, 原資料[95:0]}`，之後每拍錯位 32 bit |
+
+- **逐封包啟用**：`i_enable` 在封包第一拍時鎖進 `pkt_enable`，整個封包期間不變；未啟用時資料直接通過（[L92–L106](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_insert.sv#L92-L106)、[L305](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_insert.sv#L305)）。
+- **最後一拍**：`tkeep_final = TKEEP_ADD | (tkeep << 4 byte)`；原本最後一拍若有超過 `W_KEEP − 4` byte 有效，錯位後放不下，需要多送一拍（`extra_cycle`，`S_REG_PAD`），這一拍對輸入拉低 `tready`（[L299–L322](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_insert.sv#L299-L322)）。
+- 所以 VLAN 插入每個封包最多只多 1 拍，不會在封包中間產生空檔。
+
 ## `sc_fifo`
 
 - 深度向上取 2 的冪次；`dout` 是暫存輸出（`rd` 的下一拍有效，`dval` 同時拉高）。
@@ -92,13 +107,90 @@
 
 ## CDC 元件
 
-| 元件 | 方式 | 適用 |
+分析深度：本節六個元件逐行。
+
+### `data_sync`
+
+[data_sync.sv#L18–L62](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/data_sync.sv#L18-L62)：每個 bit 一條 `SYNC_DEPTH`（預設 2）級的移位暫存器，加上 `ASYNC_REG`、`DONT_TOUCH`、`syn_preserve` 等屬性，讓合成工具把同步鏈放在一起、不做最佳化。`RST_SYNC = "TRUE"` 用同步 reset，否則非同步 reset。
+
+**使用條件**：每個 bit 各自同步，多 bit 匯流排在變化的瞬間，目的端可能看到新舊混合的值。只有以下情況安全：單 bit；各 bit 意義獨立；Gray code；或資料在另一個已同步的控制訊號之前就固定（「資料先固定、控制後同步」）。
+
+### `pulse_sync`
+
+[pulse_sync.sv#L20–L100](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/pulse_sync.sv#L20-L100)：
+
+1. 來源端：每個輸入脈衝讓 `src_pulse_reg` 翻轉一次（toggle）。
+2. `data_sync` 2 級同步到目的端。
+3. 目的端：偵測同步後的電位變化，輸出一拍脈衝。
+4. 兩端都經 `cdc_reset_handshake` 確認 reset 完成；完成前來源端不翻轉、目的端不輸出。
+
+**使用條件**：兩個來源脈衝之間要隔開足夠時間，讓目的端看到每一次翻轉（約 2–3 個目的端時脈）。間隔太短時兩次翻轉互相抵消，**兩個脈衝都會遺失**。檔頭註解也說明：只有來源端在 reset 時，脈衝會遺失。
+
+### `reg_cdc`
+
+[reg_cdc.sv#L16–L88](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/reg_cdc.sv#L16-L88)：四相握手。
+
+| 步驟 | 時脈域 | 動作 |
 |---|---|---|
-| `data_sync` | 每 bit 一條 N 級同步鏈（`ASYNC_REG`、`DONT_TOUCH`） | 單 bit，或各 bit 獨立 / 準靜態的匯流排 |
-| `pulse_sync` | 來源端把脈衝轉成 toggle，目的端同步後偵測變化 | 單拍事件；兩次脈衝間隔需大於同步延遲 |
-| `reg_cdc` | `i_a_val` 上升緣鎖住資料，送 valid 過去；目的端收到後鎖資料並回 ack | 多 bit 值，更新頻率低 |
-| `streaming_cdc` | 小型雙時脈 FIFO，來源端以約目的端頻率 99% 的速率寫入 | 連續變化的多 bit 值（PTP 時間） |
+| 1 | A | `i_a_val` 時把資料存進 `a_reg_q`；下一拍若沒有握手在進行（`!a_val_qq`），把 `a_reg_q` 複製到 `a_reg_qq` 並拉高請求 `a_val_qq` |
+| 2 | B | 請求經 3 級同步，上升緣時鎖住 `a_reg_qq`（此時它已穩定），`o_b_val` 拉高一段時間；回 `b2a_ack` |
+| 3 | A | ack 經 2 級同步後放下請求 |
+| 4 | B | 看到請求放下，放下 ack |
 
-`dc_fifo_generic` 與 `pulse_sync` 都用 `cdc_reset_handshake`：兩端都完成 reset 後才開始工作，避免只有一端 reset 時誤判。
+**更新會遺失的情況**（R + I）：`i_a_val` 是單拍脈衝時，
 
-觀察：部分地方用 `data_sync` 跨多 bit 的準靜態設定值（例如 `ctrl_bus_evt_int` 的 24-bit `timeout`）。值改變的瞬間目的端可能短暫看到混合值；這類設定通常在使用前寫好，所以影響有限。
+- 握手進行中（`a_val_qq = 1`）又來一次 `i_a_val`：`a_reg_q` 被更新，但不會再發起握手，B 端保留舊值，直到下一次 `i_a_val`。
+- 請求剛放下、但 ack 還沒同步回來（`b2a_ack_sync[1] = 1`）時來一次 `i_a_val`：`a_reg_qq` 被更新，但請求被 ack 擋住沒有拉高，同樣不會送到 B 端。
+
+一次完整的握手約需「3 個 B 時脈 + 2 個 A 時脈」再加上 ack 放下的往返，A 為 APB（19.53 MHz）時約 6 個 APB 時脈。HSB 中 `reg_cdc` 的 A 端多半是 APB 寫入（`s_apb_reg`），而 `apb_switch` 每次 transaction 後強制等 10 拍才回 `IDLE`，所以連續兩次寫同一個暫存器至少隔 12 拍以上，不會觸發遺失。若換成更快的 APB master，或在 `SYNC_CLK` 以外的模式下由模組端高頻觸發，就要注意這個限制。
+
+### `streaming_cdc`
+
+[streaming_cdc.sv#L16–L144](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/streaming_cdc.sv#L16-L144)：給持續變化的值（PTP 時間）用。
+
+| 部分 | 行為 |
+|---|---|
+| FIFO | `dc_fifo_stub`，深度 16、almost full 7；目的端只要非空就讀 |
+| 來源較慢（`SRC_FREQ ≤ DST_FREQ`） | 每個來源時脈都寫一筆 |
+| 來源較快 | 8-bit 相位累加器把寫入速率壓到目的端頻率的 99 % 以下，例如 PTP 100.45 MHz → APB 19.53 MHz：`PHASE_INCREMENT = 49`，寫入速率 = 49/256 × 100.45 ≈ 19.23 MHz |
+| 起動 | 目的端離開 reset 後的 `dst_ready` 同步回來源端才開始寫 |
+
+因為寫入速率永遠不超過讀出速率，FIFO 幾乎保持空的，延遲固定在 Gray 指標同步加上一次 RAM 讀取（約 3–4 個目的端時脈）。這代表 HIF 端看到的 PTP 時間比 PTP 計時器晚約 20–40 ns（推斷；RTL 沒有補償，`dp_pkt_top` 的 metadata 與 CoE 時間戳都取自這個值）。
+
+### `dc_fifo_generic` / `dc_fifo_stub`
+
+[dc_fifo_generic.sv#L55–L398](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L55-L398)：
+
+| 項目 | 行為 |
+|---|---|
+| 指標 | 二進位計數器 + Gray code（`(bin >> 1) ^ bin`），位址比深度多 1 bit 區分滿 / 空 |
+| 跨時脈 | Gray 指標經 `data_sync` 2 級同步，再轉回二進位算數量；每次寫或讀只變 1 bit，所以多 bit 同步是安全的 |
+| 實體深度 | `2^⌈log2(FIFO_DEPTH)⌉`：例如 VP FIFO 的 `FIFO_DEPTH = 1006` 實際是 1024 筆 |
+| 旗標 | `full` / `afull` 在寫端、`empty` / `aempty` 在讀端計算；用同步後（較舊）的對方指標，所以偏保守 |
+| 溢位 / 下溢 | `wr & full` 時不寫、`over` 拉高；`rd & empty` 時不讀、`under` 拉高。`dc_fifo_stub` 在 `ASSERT_ON` 時對兩者下 assertion |
+| reset | 兩端都要 reset。`cdc_reset_handshake` 完成前，寫端不寫、讀端 `empty` 保持 1 |
+| RAM | `MEM_STYLE`：LUT、BLOCK 或 AUTO。AUTO 的判斷前後不一致：分散式用 `BUF_DEPTH < 128`、block 用 `FIFO_DEPTH ≥ 128`，`FIFO_DEPTH` 在 65–127 之間時兩者都不成立，交給合成工具自行推斷（[dc_fifo_generic.sv#L357–L370](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L357-L370)） |
+
+`dc_fifo_stub` 是包裝層，註解說明可替換為廠商原生 FIFO；替換後實體深度與旗標時序可能不同。
+
+### `cdc_reset_handshake`
+
+[cdc_reset_handshake.sv#L36–L141](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/cdc_reset_handshake.sv#L36-L141)：確認兩端都經過 reset。目的端離開 reset 後送 `dest_ack`；來源端只有在自己 reset 過（`src_gate` 只在 `src_rst` 時清 0）才回 `src_ready`；目的端看到後設 `dest_ready`。只有一端 reset 時握手不會完成，對應的 FIFO / 脈衝同步器保持停用，而不是用不一致的狀態繼續工作。
+
+### HSB 中的使用檢查
+
+依 [overview §跨時脈地圖](../architecture/overview.md#跨時脈地圖) 列出的每個跨時脈點，對照上面的使用條件：
+
+| 位置 | 元件 | 條件是否成立 |
+|---|---|---|
+| VP FIFO、`axis_buffer_tx`、`ptp_ingress` | `dc_fifo` | ✓ 標準 Gray code FIFO |
+| PTP 時間 → HIF / APB | `streaming_cdc` | ✓；有固定延遲（見上） |
+| `s_apb_reg` 控制暫存器 | `reg_cdc` | ✓ 前提是同一暫存器的寫入間隔大於握手時間（`apb_switch` 的 10 拍延遲保證） |
+| `ptp_dly` 送出欄位、`bootp` PPS + 時間 | `reg_cdc` | ✓ 每秒或每個 Sync 一次 |
+| ECB `cmd_addr` / `cmd_rddata` | `data_sync`（32 bit） | ✓ 資料先固定、控制後同步 |
+| ECB `cmd_dout` | **無** | 依賴時序：資料在 `apb_send_cmd` 前固定。需要合成約束 |
+| packetizer RAM 寫入 | `data_sync`（單拍脈衝，取下降緣） | 條件：SIF RX 時脈不慢於 APB 時脈，否則脈衝可能取樣不到 |
+| packetizer SOF、VP 0 結尾、`axis_buffer_tx` 封包計數、PTP TX 時間戳 | `pulse_sync` | ✓ 事件間隔遠大於同步延遲（一個 frame / 封包一次） |
+| `hsb_stat`（8 bit） | `data_sync` | 各 bit 意義獨立，短暫混合值只影響一次 BOOTP 的內容 |
+| `ctrl_bus_evt_int` 的 24-bit `timeout` 等設定 | `data_sync` | 準靜態設定，改寫瞬間可能短暫看到混合值 |
+| `init_done`、EEPROM IP valid | `data_sync` | ✓ 單 bit；IP 本身只同步 valid，資料視為靜態 |

@@ -9,7 +9,7 @@
 | 原始碼 | [`eth_pkt/eth_pkt.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/eth_pkt/eth_pkt.sv)（384 行） |
 | 實例 | [`HOLOLINK_top.sv#L966`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L966) |
 | 時脈 | `i_pclk`（HIF） |
-| 分析深度 | 仲裁、逾時、輸出逐行；`axis_insert` 內部未讀 |
+| 分析深度 | 逐行（`axis_insert` 見 [lib §axis_insert](lib.md#axis_insert)） |
 
 ## 參數
 

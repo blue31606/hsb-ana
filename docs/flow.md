@@ -44,7 +44,7 @@ sequenceDiagram
 |---|---|---|---|
 | 1 | `reset_gen` | 板級 reset 釋放後，依序釋放 APB、HIF、PTP、SIF 時脈域的 reset | [boot_and_reset](modules/boot_and_reset.md#reset_gen) |
 | 2 | `sys_init` | 經 `m_apb[1]` 依序寫入 `init_reg[N_INIT_REG]`，通常是板級 PCS / MAC 設定（CPNX100 有 22 筆） | [boot_and_reset](modules/boot_and_reset.md#sys_init) |
-| 3 | `eeprom_info` | 經 I2C（位址 0x50）讀 EEPROM：MAC、board SN、IP。讀不到時用預設 MAC `CA:FE:C0:FF:EE:00`、IP `192.168.0.2` | [boot_and_reset](modules/boot_and_reset.md#eeprom_info) |
+| 3 | `eeprom_info` | 經 I2C（位址 0x50）讀 EEPROM：MAC、board SN、IP。IP 無效（byte 64 ≠ `0x17`）時用預設 `192.168.0.2 + 埠號`；EEPROM 不存在時 MAC 會被讀成殘留值而不是 `CA:FE:C0:FF:EE:00`（見 [boot_and_reset 注意事項](modules/boot_and_reset.md#注意事項)） | [boot_and_reset](modules/boot_and_reset.md#eeprom_info) |
 | 4 | `HOLOLINK_top` | `init_done = eeprom_dval && sys_init_done`；之前 HIF RX 的 `tvalid` 被遮掉 | [overview §8](architecture/overview.md#8-開機與初始化) |
 
 host 埠 `i` 的 MAC = EEPROM MAC + `i`。

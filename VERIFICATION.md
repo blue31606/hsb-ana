@@ -42,6 +42,14 @@
 | `configure_roce()` 的寫入順序與每個暫存器的 RTL 效果 | R + X | [flow §5](docs/flow.md#5-設定-data-planedatachannelconfigure_roce) |
 | CLNX17 → CPNX100 LVDS 格式與校正 pattern | R | [boards §感測器接收路徑](docs/boards.md#感測器接收路徑) |
 | 頻寬、封包間隔、延遲、緩衝餘裕 | I（由 RTL 參數推算） | [performance](docs/performance.md) |
+| 各模組的實例化次數（每 host 埠 / 每感測器 / 共用）；PTP 只接 host 0 | R | [overview §2](docs/architecture/overview.md#2-頂層方塊圖) |
+| 全部跨時脈點與使用的同步元件 | R | [overview §跨時脈地圖](docs/architecture/overview.md#跨時脈地圖)、[lib §CDC 元件](docs/modules/lib.md#cdc-元件) |
+| ECB 寫入沒有 `ACK_REQUEST` 時不回應；回應尾端帶 2 byte sequence；N ≤ 1 時補到 18 byte | R + X（host 一律設 `ACK_REQUEST`） | [rx_ls_parser §回應格式](docs/modules/rx_ls_parser.md#回應格式) |
+| RoCE-ECB 回應是 RDMA WRITE with Immediate（0x2B） | R | 同上 |
+| `roce_icrc` 支援的最後一拍長度剛好涵蓋 HSB 產生的所有 RoCE 封包；`lfsr_hc` 只有特定寬度有方程式 | R | [roce](docs/modules/roce.md) |
+| reset 串接：HIF / PTP / SIF reset 都以 APB reset 為來源；軟體 reset 自我清除 | R | [boot_and_reset §reset_gen](docs/modules/boot_and_reset.md#reset_gen) |
+| EEPROM 每次讀 32 byte、共 8 次；CRC 多項式實為 0x31（反射 0x8C） | R + X（`eeprom_utility.py`、testbench 註解） | [boot_and_reset §eeprom_info](docs/modules/boot_and_reset.md#eeprom_info) |
+| Bridge 的 correctionField 位置是 byte 22–27（Layer 2 PTP） | R | [bridge §PTP 透明時鐘](docs/modules/bridge.md#ptp-透明時鐘) |
 | 事件序列器指令格式（POLL / WRITE / READ / NOP），RAM 在 `0x2000` | R + X | [event](docs/modules/event.md) |
 | EEPROM 版面、預設 MAC `CA:FE:C0:FF:EE:00`、I2C 位址 0x50 | R | [boot_and_reset](docs/modules/boot_and_reset.md) |
 | Bridge CAM 64 筆、只從 SIF 學習 | R | [bridge](docs/modules/bridge.md) |
@@ -71,6 +79,14 @@
 | Bridge 透明時鐘用 OR 而不是加法修正 correctionField；CAM 沒有老化 | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
 | `lib` 中 `axis_demux`、`comparator`、`debouncer`、`str_fwd_fifo` 沒有被引用 | R | [lib](docs/modules/lib.md) |
 | `imu_top` 沒有被任何板級實例化 | R | [ref_design](docs/modules/ref_design.md) |
+| ECB 封包在 pair 中途結束仍執行一次 APB 存取；單組 `WR_BLOCK` 被補齊時可能多寫一次 `glb_scratch` | R + I | [rx_ls_parser 注意事項](docs/modules/rx_ls_parser.md#注意事項) |
+| ECB `cmd_dout` 跨時脈沒有同步器；BOOTP reply 沒有 xid / chaddr 驗證；LS 路徑所有 host 埠共用，會互相阻擋 | R + I | 同上 |
+| `roce_ack`：重複封包不回 ACK；IPv4 checksum 增量更新在借位時差 2；第一個 ACK 的 PSN 為 0 | R + I | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
+| `reg_cdc` 在握手進行中的更新會遺失（HSB 內由 `apb_switch` 的 10 拍延遲避免） | R + I | [lib §reg_cdc](docs/modules/lib.md#reg_cdc) |
+| `streaming_cdc` 讓 HIF 端的 PTP 時間固定晚約 20–40 ns，未補償 | R + I | [lib §streaming_cdc](docs/modules/lib.md#streaming_cdc) |
+| `dc_fifo` 實體深度補到 2 的次方；AUTO RAM 判斷條件前後不一致 | R | [lib §dc_fifo_generic](docs/modules/lib.md#dc_fifo_generic--dc_fifo_stub) |
+| EEPROM 不存在時 MAC 不會保留預設值；EEPROM CRC 檢查與寫入工具不一致且結果未使用 | R + X + I | [boot_and_reset 注意事項](docs/modules/boot_and_reset.md#注意事項) |
+| Bridge：本 repo 沒有板級使用；只支援 Layer 2 PTP；一般 multicast 被丟棄；64-bit 時大於約 1.8 KB 的 host 封包會卡死；host 優先於 SIF | R + I | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
 
 ## 時序圖
 
@@ -86,6 +102,10 @@
 | E2E Delay_Resp 配對 | v3 寫「沒有 sequenceId 檢查」 | v4：Delay_Resp 有 sequenceId 與 requestingPortIdentity 檢查；沒有配對的是 Delay 量測與 Sync |
 | `dp_pkt_ts` | v3 寫「所有 VP 讀過才彈出」 | v4：FIFO 項目分配到每個 VP 的 4 筆環狀 RAM 後就彈出；讀指標在 metadata 後前進 |
 | metadata `flags[1]` | v3 寫「frame 結尾沒有對齊封包邊界」 | v4：buffer 寫滿但還沒看到 VP 的 `tlast`（`bpw_only`） |
+| `bootp` 的 `ciaddr` | v3 列為「名稱與內容不符」 | v5：它是 BOOTP request 的 ciaddr 欄位（目前 IP），從 reply 的 `yiaddr` 更新，命名正確 |
+| EEPROM 每次讀取長度 | v3 寫 28 byte（照抄原始碼註解） | v5：程式實際設定 32 byte |
+| ECB `ACK_REQUEST` | v3 寫「host 軟體定義」 | v5：RTL 依此決定寫入命令是否回應 |
+| 頂層方塊圖 | v2–v4 只部分標示實例化次數 | v5：每個模組都標示份數，並列出共用資源對效能的影響 |
 | `hsb_ctrl_1` | v2 未說明極性 | `o_sw_sen_rst = ~hsb_ctrl_1`，實際極性由板級決定 |
 
 ## 建議的下一步驗證
