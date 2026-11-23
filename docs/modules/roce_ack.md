@@ -75,7 +75,7 @@ NAK 只送一次：送出 NAK 或 RNR NAK 後設 `has_nacked`，之後同一個 
 | | src / dest IP | 對調 |
 | UDP | 埠 | **不對調**（兩邊都是 4791）；checksum 0 |
 | BTH | opcode | `0x11`（RC Acknowledge） |
-| | dest QP | QP RAM（`0x0000_3000` 起）的 `[23:0]`：host 端 QP。`u_host_qp_ram` 固定 `R_CTRL = 2`、`R_TOTL = 8`，與 `N_QP` 無關，SIF TX 編號 ≥ 2 時的行為取決於 `s_apb_ram` 的越界處理，未追蹤（[roce_ack.sv#L549–L552](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L549-L552)；v6 稽核提出，待確認） |
+| | dest QP | QP RAM（`0x0000_3000` 起）的 `[23:0]`：host 端 QP。**只有 2 個 word**：`u_host_qp_ram` 固定 `R_CTRL = 2`，與 `N_QP` 無關（[roce_ack.sv#L549–L573](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_ack.sv#L549-L573)）。內部讀取位址 `i_addr` 只有 `$clog2(2) = 1` bit，`sif_idx` 被截成最低位，所以 SIF TX 2、3 會讀到 SIF TX 0、1 的 host QP 與 RNR timer；APB 寫入 word 2 以上則回 `pslverr` / `0xBADADD12`（[s_apb_ram.sv#L85](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_ram.sv#L85)）。目前沒有板級定義 `ENABLE_ROCE_ACK`，而 PYNQ 有 4 個 SIF TX，所以這是潛在問題（R，v6 確認） |
 | | PSN | 狀態 RAM 中的期望 PSN：ACK 時等於被確認封包的 PSN；NAK 時是 HSB 期望的下一個 PSN |
 | AETH | syndrome | 見下表 |
 | | MSN | 更新後的 MSN（每個 `*_LAST` / `*_ONLY` 封包加 1） |

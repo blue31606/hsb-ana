@@ -27,7 +27,7 @@ python3 tools/verify/verify_calcs.py <holoscan-sensor-bridge 路徑>
 | 5b | 各板級 packetizer RAM 數 | packetizer.sv L69–L134 | 公式代入 | RESULT：CPNX100 / NV MIPI 為 2 / 18 / 1，共 21 個、336 次寫入；Terasic S10 為 1 / 6 / 1，共 8 個、128 次寫入。與 [packetizer §4](modules/packetizer.md#4-可程式化資料路徑packetizersv) 的表一致 |
 | 6a | header 長度與拍數 | `dp_pkt_hdr.sv` | 欄位相加 | PASS：RoCE 70 B、CoE 46 B、RoCE metadata 202 B、CoE metadata 174 B、RoCE+Imm 74 B |
 | 6b | ICRC 最後一拍長度 | [roce_icrc.sv](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/roce_icrc.sv) | 去掉前 6 B 後的長度 | RESULT：64-bit 時 8 / 4 / 4 / 4，512-bit 時 64 / 4 / 36 / 52（WRITE / WRITE+Imm / 32 B frame / ACK） |
-| 7 | `lfsr_hc` 8-bit 方程式 | [lfsr_hc.sv](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/lfsr_hc.sv) | 標準反射 CRC-32（0xEDB88320）逐 byte | PASS：從原始碼解析 32 條方程式，加上模組邊界的位元反轉後，5000 次隨機步驟全部一致 |
+| 7 | `lfsr_hc` 全部 11 種寬度 | [lfsr_hc.sv](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/roce/lfsr_hc.sv) | 標準反射 CRC-32（0xEDB88320）逐 byte，`data_in[7:0]` 為第一個 byte | PASS：8、16、32、64、128、256、288、416、512、544、1024 bit 的方程式都從原始碼解析（各 32 條），加上模組邊界的位元反轉後全部一致（≤ 256 bit 各 1000 組、更寬各 300 組隨機值）。所以 `lfsr_hc` 一拍處理 `DATA_WIDTH / 8` 個 byte，AXIS 低位 byte 先算，與 Ethernet 的 byte 順序一致 |
 | 8 | DPLL `fa` 單位 | `dpll.sv` | 2⁻²⁴ ns / 時脈週期 | PASS：100.446545 MHz 時 5.99 ppb，±2²³ 對應 ±5 % |
 | 8 | `streaming_cdc` 相位增量 | `misc/streaming_cdc.sv` | 參數代入 | RESULT：49，寫入率 19.23 MHz（低於 19.53 MHz） |
 | 8 | I2C `clk_cnt = 0x19` | `i2c/i2c.sv` | `f_APB / (2 × clk_cnt)` | RESULT：19.53 MHz 時 391 kHz |
@@ -38,10 +38,9 @@ python3 tools/verify/verify_calcs.py <holoscan-sensor-bridge 路徑>
 
 - [boot_and_reset 注意事項](modules/boot_and_reset.md#注意事項) 的 EEPROM CRC 不一致從「讀 RTL」升級為**數值確認**：正確燒錄的 EEPROM 約 99.6 % 會讓 `eeprom_crc_err = 1`。這個訊號沒有接到任何地方，所以目前沒有功能影響。
 - [roce_ack 注意事項 6](modules/roce_ack.md#注意事項) 的「借位時差 2」為**數值確認**，觸發範圍是 `chk + old_len < 48`，也就是請求的 IPv4 total length 小於 48。帶 RETH 的 RDMA WRITE 最短 60 byte，**永遠不會觸發**；只有不帶 payload 的 SEND（BTH only，44 byte）且 checksum ≤ 3 時才會發生（`roce_ack` 對所有 RC opcode 都回應）。
-- `0xC52D` 公式、`lfsr_hc` CRC-32、`ODD_EVEN_SIZE` 表、RAW10 / RAW12 排程、header 長度、flow 範例的數字都通過獨立比對。
+- `0xC52D` 公式、`lfsr_hc` 全部寬度的 CRC-32、`ODD_EVEN_SIZE` 表、RAW10 / RAW12 排程、header 長度、flow 範例的數字都通過獨立比對。
 
 ## 沒有涵蓋的部分
 
 - 時序：拍數、管線延遲、FSM 轉換都需要模擬。測試計畫見 [test-plan](test-plan.md)。
-- `lfsr_hc` 只檢查了 8-bit。其他寬度的方程式格式相同，但沒有逐一比對。
 - 沒有驗證 `roce_icrc` 對最後一拍的遮罩與位元組順序。

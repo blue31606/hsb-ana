@@ -9,7 +9,7 @@
 | `i2s_top` | [`i2s/`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/tree/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/i2s) | 1600 | I2S 音訊 TX / RX，經 SIF 與 host 交換資料 | CPNX100 |
 | `imu_top` | [`imu/`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/tree/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/imu) | 733 | 經 I2C 讀 IMU，每筆樣本附 PTP 時間戳，以 AXIS 輸出 | 本 repo 的板級未使用 |
 
-分析深度：`vsync_gen` 主要邏輯；`i2s_top`（`i2s_clk_gen`、`i2s_serdes`、TX / RX buffer）與 `imu_top` / `imu` 在 v6 補到主要邏輯；`delayed_io` 只讀介面。
+分析深度：`vsync_gen` 主要邏輯；`i2s_top`（`i2s_clk_gen`、`i2s_serdes`、TX / RX buffer）與 `imu_top` / `imu` 在 v6 補到主要邏輯；`delayed_io` 在 v6 補到逐行。
 
 ## `vsync_gen`
 
@@ -30,7 +30,48 @@ host 軟體佐證：`VSYNC_CONTROL = 0x7000_0000`、`VSYNC_FREQUENCY = 0x7000_00
 
 ## `delayed_io`
 
-在 APB 時脈與處理時脈兩個時脈域運作。暫存器 0x04 = 延遲（µs）、0x08 = 立即設定。CPNX100 板級與 `vsync_gen` 共用同一個使用者 APB slave，以位址 bit 11 區分（[`FPGA_top.sv#L503`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv#L503)）。
+在軟體指定的延遲（微秒）之後把輸出腳位設為 1 或 0，也可以立即設定。每個輸出一個計數器（`delayed_io_ctrl_fsm`），延遲值所有輸出共用。
+
+### 暫存器
+
+[delayed_io.sv#L87–L161](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io.sv#L87-L161)（位址只看 `paddr[7:0]`）：
+
+| Offset | 方向 | 說明 |
+|---|---|---|
+| 0x04 | RW | 延遲（µs），reset 1000 |
+| 0x08 | W | 立即設 1（位元遮罩） |
+| 0x0C | W | 立即清 0（位元遮罩） |
+| 0x14 | W | 延遲後設 1（位元遮罩） |
+| 0x18 | W | 延遲後清 0（位元遮罩） |
+| 0x20 | W | 取消尚未執行的延遲操作（位元遮罩） |
+| 0x80 | R | 目前輸出狀態 |
+| 0x84 | R | 計數中的輸出 |
+| 0xF0 | RW | `[0]` 全域啟用；關閉時所有輸出為 0、延遲操作被取消 |
+| 0xF8 | R | `CYCLES_PER_US`（除錯） |
+
+寫入不存在的位址回 `pslverr`；讀取不存在的位址回 `0xBADADD12` 並設 `pslverr`。
+
+### 行為
+
+| 項目 | 行為 | 原始碼 |
+|---|---|---|
+| 延遲換算 | `fsm_delay_cycles = delay_us × CYCLES_PER_US`，`CYCLES_PER_US = ⌈CLK_FREQ / 10⁶⌉`。`CLK_FREQ` 預設 19,541,250 → 20 | [delayed_io.sv#L54](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io.sv#L54)、[delayed_io.sv#L234](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io.sv#L234) |
+| 優先順序 | 同一拍多個要求時：立即設 1 > 立即清 0 > 取消 > 延遲設 1 > 延遲清 0；延遲操作只在全域啟用時接受 | [delayed_io.sv#L252–L282](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io.sv#L252-L282) |
+| 計數器 | `start` 上升緣時載入延遲並數到 1，進 `DONE`；延遲為 0 時直接 `DONE`。`DONE` 時依記下的操作類型更新輸出 | [delayed_io_ctrl_fsm.sv#L60–L99](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io_ctrl_fsm.sv#L60-L99)、[delayed_io.sv#L284–L291](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io.sv#L284-L291) |
+| 輸出 | `o_io_pins = global_enable ? 狀態 : 0`；`o_io_busy` = 計數中或有待執行的操作 | [delayed_io.sv#L320–L321](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io.sv#L320-L321) |
+| 跨時脈 | APB 寫入脈衝與設定值都只經**一級** `proc_clk` 暫存器 | [delayed_io.sv#L196–L226](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ref_design/delayed_io/delayed_io.sv#L196-L226) |
+
+### 板級連接（CPNX100）
+
+[FPGA_top.sv#L420–L434](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv#L420-L434)：`NUM_OUTPUTS = 1`，`cmd_clk` 與 `proc_clk` 都接 APB 時脈（註解「Using same clock for simplicity」），所以上面的跨時脈問題在這個板級不會發生。輸出經 `gpio_mux_en[8]` 接到 GPIO 0（[FPGA_top.sv#L709](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv#L709)）。與 `vsync_gen` 共用同一個使用者 APB slave，以位址 bit 11 區分（[`FPGA_top.sv#L503`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv#L503)）。
+
+### 注意事項
+
+1. **取消不會停止計數器。** 立即設定、立即清除、取消都只清掉 `delayed_op_type`，`delayed_io_ctrl_fsm` 沒有取消輸入，會繼續數到原本的時間（`countdown_active` 一直為 1）。這段期間再送新的延遲要求，`start` 的上升緣在 `DELAY` 狀態被忽略，新操作會在**舊的到期時間**執行，而不是從現在起算延遲（R）。
+2. **計數中改變操作不會重新計時。** 延遲設 1 還沒到期時送延遲清 0，只會把操作類型換成清 0，到期時間不變（R）。
+3. **延遲有 +2.4 % 的誤差。** CPNX100 的 APB 時脈是 19.53125 MHz，但用的是預設 `CLK_FREQ = 19,541,250`，`CYCLES_PER_US` 無條件進位成 20，所以 1 µs 實際是 20 / 19.53 ≈ 1.024 µs（R）。
+4. `delay_us × CYCLES_PER_US` 是 32 bit，延遲超過約 214 秒（20 拍 / µs 時）會溢位。
+5. 若 `proc_clk` 與 `cmd_clk` 不同，寫入脈衝只有 1 個 APB 時脈寬、而且沒有同步器：`proc_clk` 較慢時可能漏掉，任何情況下都有 metastability 風險（R；CPNX100 用同一個時脈，不受影響）。
 
 ## `i2s_top`
 

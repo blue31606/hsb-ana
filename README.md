@@ -38,7 +38,7 @@
    | 周邊 | [I2C / SPI / UART / GPIO](docs/modules/peripherals.md) | 交易狀態機、位元引擎、時脈公式、逾時、暫存器 | 逐行 |
    | Bridge | [Bridge 模式](docs/modules/bridge.md) | `routing_table`、`bridge_pkt_proc`、透明時鐘、緩衝 | 逐行 |
    | 共用 | [`lib_axis` / `misc`](docs/modules/lib.md) | 39 個元件目錄；CDC 元件與使用檢查、`axis_insert` 逐行 | 目錄 + 重點元件逐行 |
-   | 參考設計 | [`ref_design`](docs/modules/ref_design.md) | `vsync_gen`、`delayed_io`、`i2s_top`（時脈、序列化、buffer）、`imu_top`（串流 I2C） | `vsync_gen` / I2S / IMU 主要邏輯；`delayed_io` 介面 |
+   | 參考設計 | [`ref_design`](docs/modules/ref_design.md) | `vsync_gen`、`delayed_io`、`i2s_top`（時脈、序列化、buffer）、`imu_top`（串流 I2C） | `delayed_io` 逐行；`vsync_gen` / I2S / IMU 主要邏輯 |
 
 3. **系統層級**：
    - [端到端流程](docs/flow.md)：上電 → enumeration → 時間同步 → 設定 Data Plane → 一個 frame 的傳送，串起 host 軟體與 RTL，附數值範例。
@@ -113,4 +113,4 @@ python3 tools/verify/verify_calcs.py ../holoscan-sensor-bridge
 | v3 | `932292c` | 改為完整、中立的全 IP 分析：新增 PTP、packetizer、事件、APB、開機、周邊、Bridge、RoCE、共用元件、參考設計、板級、驗證環境等文件；`dp_pkt_top`、`rx_ls_parser` 重寫為主要邏輯深度；移除特定應用的設計提案 |
 | v4 | `ddb130a` | `packetizer`、`dp_pkt_top`、PTP 補到逐行並加時序圖；新增端到端流程、效能分析、完整暫存器索引；周邊狀態機與時脈公式；板級感測器接收路徑；testbench 流程與檢查項目 |
 | v5 | `fc2b904` | 重畫頂層方塊圖並新增跨時脈地圖、控制平面 / Data Plane 全貌；`rx_ls_parser`、`roce_icrc`、`roce_ack`、Bridge、APB、開機與 reset 補到逐行；CDC 元件逐行並逐一檢查使用處 |
-| v6 | 目前版本 | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題 |
+| v6 | 目前版本 | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題；之後補上 `lfsr_hc` 全部寬度的數值驗證、追完稽核留下的 2 項、`delayed_io` 逐行 |

@@ -1,6 +1,6 @@
 # 驗證狀態
 
-本文件記錄每類結論是怎麼確認的。**所有結論都沒有經過模擬或硬體驗證**：分析環境沒有 HDL 模擬器（VCS / Xcelium / Questa / Verilator / Icarus 都沒有），也無法安裝。可以計算的部分（checksum、CRC、排程、版面）改用 Python 重寫 RTL 運算做數值比對（方法 **N**）。v6 另外請一個獨立的 agent 逐項對照 RTL 稽核全部文件，找到的 33 項逐一對照 RTL 確認：31 項已修正，2 項（`roce_ack` QP RAM 越界、Bridge 學習請求遺失）無法完全確認，在文件中標為待確認。
+本文件記錄每類結論是怎麼確認的。**所有結論都沒有經過模擬或硬體驗證**：分析環境沒有 HDL 模擬器（VCS / Xcelium / Questa / Verilator / Icarus 都沒有），也無法安裝。可以計算的部分（checksum、CRC、排程、版面）改用 Python 重寫 RTL 運算做數值比對（方法 **N**）。v6 另外請一個獨立的 agent 逐項對照 RTL 稽核全部文件，找到的 33 項逐一對照 RTL 確認：31 項已修正；另外 2 項（`roce_ack` QP RAM 越界、Bridge 學習請求遺失）稽核時無法確認，v6 後續追完 RTL，兩項都成立，已列入問題清單（TX-10、BR-9）。
 
 ## 確認方法
 
@@ -47,7 +47,7 @@
 | 全部跨時脈點與使用的同步元件 | R | [overview §跨時脈地圖](docs/architecture/overview.md#跨時脈地圖)、[lib §CDC 元件](docs/modules/lib.md#cdc-元件) |
 | ECB 寫入沒有 `ACK_REQUEST` 時不回應；回應尾端帶 2 byte sequence；N ≤ 1 時補到 18 byte | R + X（host 一律設 `ACK_REQUEST`） | [rx_ls_parser §回應格式](docs/modules/rx_ls_parser.md#回應格式) |
 | RoCE-ECB 回應是 RDMA WRITE with Immediate（0x2B） | R | 同上 |
-| `roce_icrc` 支援的最後一拍長度剛好涵蓋 HSB 產生的所有 RoCE 封包；`lfsr_hc` 只有特定寬度有方程式；8-bit 方程式等於反射 CRC-32 | R + N | [roce](docs/modules/roce.md) |
+| `roce_icrc` 支援的最後一拍長度剛好涵蓋 HSB 產生的所有 RoCE 封包；`lfsr_hc` 只有特定寬度有方程式；11 種寬度的方程式全部等於反射 CRC-32 | R + N | [roce](docs/modules/roce.md) |
 | reset 串接：HIF / PTP / SIF reset 都以 APB reset 為來源；軟體 reset 自我清除 | R | [boot_and_reset §reset_gen](docs/modules/boot_and_reset.md#reset_gen) |
 | EEPROM 每次讀 32 byte、共 8 次；CRC 多項式實為 0x31（反射 0x8C） | R + X + N（check 值 0xA1） | [boot_and_reset §eeprom_info](docs/modules/boot_and_reset.md#eeprom_info) |
 | Bridge 的 correctionField 位置是 byte 22–27（Layer 2 PTP） | R | [bridge §PTP 透明時鐘](docs/modules/bridge.md#ptp-透明時鐘) |
@@ -92,6 +92,8 @@
 | `ram_player` `timer = 0` 不循環、`window_size < W_KEEP` 沒有 `tlast`、中途停止違反 AXIS | R | [data_gen §ram_player](docs/modules/data_gen.md#ram_player) |
 | Bridge `del_req_val` 用錯 index；CAM 填滿後未命中送往 entry 0 | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
 | 事件序列器 opcode `11` 不是 NOP | R | [event](docs/modules/event.md) |
+| `roce_ack` host QP RAM 只有 2 個 word；Bridge 學習請求可能遺失 | R | [roce_ack](docs/modules/roce_ack.md)、[bridge 注意事項](docs/modules/bridge.md#注意事項) |
+| `delayed_io` 取消不停止計數器；CPNX100 延遲多 2.4 % | R | [ref_design §delayed_io](docs/modules/ref_design.md#delayed_io) |
 
 ## 時序圖
 

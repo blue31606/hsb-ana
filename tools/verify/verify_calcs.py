@@ -318,43 +318,59 @@ def check_headers():
 # ---------------------------------------------------------------------------
 def check_lfsr(root):
     src = (Path(root) / "fpga/nv_hsb_ip/roce/lfsr_hc.sv").read_text()
-    block = src[src.index("if (DATA_WIDTH==8)"):]
-    block = block[:block.index("end")]
-    eqs = {}
-    for m in re.finditer(r"assign lfsr_c\[(\d+)\] = ([^;]+);", block):
-        terms = [t.strip() for t in m.group(2).split("^")]
-        eqs[int(m.group(1))] = ([int(t[7:-1]) for t in terms if t.startswith("lfsr_q")],
-                                [int(t[4:-1]) for t in terms if t.startswith("din")])
+    widths = [int(w) for w in re.findall(r"DATA_WIDTH==(\d+)\)", src)]
 
-    def step_eq(state, din):
-        out = 0
-        for bit, (qs, ds) in eqs.items():
-            v = 0
-            for q in qs:
-                v ^= (state >> q) & 1
-            for d in ds:
-                v ^= (din >> d) & 1
-            out |= v << bit
-        return out
+    def parse(width):
+        blk = src[src.index(f"DATA_WIDTH=={width})"):]
+        blk = blk[:blk.index("\n  end")]
+        eqs = {}
+        for m in re.finditer(r"assign lfsr_c\[(\d+)\] = ([^;]+);", blk):
+            terms = [t.strip() for t in m.group(2).split("^")]
+            qmask = 0
+            dmask = 0
+            for t in terms:
+                if t.startswith("lfsr_q"):
+                    qmask ^= 1 << int(t[7:-1])
+                elif t.startswith("din"):
+                    dmask ^= 1 << int(t[4:-1])
+            eqs[int(m.group(1))] = (qmask, dmask)
+        return eqs
+
+    def parity(x):
+        return bin(x).count("1") & 1
 
     def rev(x, w):
         return int(f"{x:0{w}b}"[::-1], 2)
 
-    def wrapper(state, data):            # lfsr_hc.sv: lfsr_q/din reversed, lfsr_c reversed back
-        return rev(step_eq(rev(state, 32), rev(data, 8)), 32)
-
-    def crc32_reflected_byte(state, b):  # standard Ethernet CRC-32 byte step (poly 0xEDB88320)
-        state ^= b
-        for _ in range(8):
-            state = (state >> 1) ^ 0xEDB88320 if state & 1 else state >> 1
+    def crc32_reflected(state, data_bytes):   # Ethernet CRC-32 (poly 0xEDB88320), no init / xorout
+        for b in data_bytes:
+            state ^= b
+            for _ in range(8):
+                state = (state >> 1) ^ 0xEDB88320 if state & 1 else state >> 1
         return state
 
-    mism = 0
-    for _ in range(5000):
-        s, b = random.getrandbits(32), random.getrandbits(8)
-        mism += wrapper(s, b) != crc32_reflected_byte(s, b)
-    report("lfsr_hc DATA_WIDTH=8 with module bit reversal = reflected CRC-32 (Ethernet) byte step",
-           mism == 0 and len(eqs) == 32, f"{len(eqs)} equations parsed; {mism} mismatches in 5000 random steps")
+    rows, all_ok = [], True
+    for w in widths:
+        eqs = parse(w)
+
+        def wrapper(state, data):             # lfsr_hc.sv: lfsr_q/din reversed, lfsr_c reversed back
+            q, d = rev(state, 32), rev(data, w)
+            out = 0
+            for bit, (qm, dm) in eqs.items():
+                out |= (parity(q & qm) ^ parity(d & dm)) << bit
+            return rev(out, 32)
+
+        le = 0
+        n = 300 if w > 256 else 1000
+        for _ in range(n):
+            st, dt = random.getrandbits(32), random.getrandbits(w)
+            got = wrapper(st, dt)
+            le += got == crc32_reflected(st, dt.to_bytes(w // 8, "little"))
+        ok = len(eqs) == 32 and le == n
+        all_ok &= ok
+        rows.append(f"{w}: {le}/{n}")
+    report("lfsr_hc: every DATA_WIDTH block = reflected CRC-32 over data_in, byte 0 in [7:0]",
+           all_ok, "; ".join(rows))
 
 
 # ---------------------------------------------------------------------------

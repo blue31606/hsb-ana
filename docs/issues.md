@@ -47,6 +47,7 @@
 | TX-7 | 中 | `sensor_tx_pkt_proc` / `tx_stream_buffer` | 路徑沒有 `tready`，FIFO 滿時遺失 beat（不是整包），`tlast` 也可能遺失 | host 送得比感測器消耗快，pause 沒有及時生效 | R + I | FIFO 滿時丟整包並補 `tlast`；或在 SOF 檢查空間 |
 | TX-8 | 中 | `HOLOLINK_top` / `tx_stream_buffer` | 每個 `pause_gen` 都接 `tx_pause_quanta[0]`，其他 SIF TX 的 quanta 無效 | 多個 SIF TX 設定不同的 quanta | R | 見 [F-6](#f-6pause-quanta-索引) |
 | TX-9 | 低 | `tx_stream_buffer` | `saw_overflow` 判斷早一格，且預填期間溢位不記錄 | 預填期間 FIFO 就滿 | R | 改用實際寫入失敗（`wr_en && full`）設旗標 |
+| TX-10 | 低 | `roce_ack` | host QP RAM 固定 2 個 word，SIF TX 2 以上與 0、1 共用 host QP / RNR timer | `ENABLE_ROCE_ACK` 且 SIF TX ≥ 3（目前沒有板級符合） | R | `R_CTRL` 改成 `N_QP`（或 SIF TX 數） |
 
 ### Control Plane（ECB、BOOTP、LS 路徑）
 
@@ -83,6 +84,7 @@
 | BR-6 | 低 | `bridge` | host 來源固定優先於 SIF | host 流量持續 | R | round-robin |
 | BR-7 | 中（啟用時） | `eth_pkt` / `bridge` | `o_del_req_val` 用 `out_idx == 4`（PAUSE）判斷，Bridge 是 index 5；Bridge 轉送的 Delay_Req 不會停止 residence time 量測 | 啟用 Bridge 且 SIF 端裝置送 Delay_Req | R | 比較改成 Bridge 的 index（`'d5`），最好用具名參數 |
 | BR-8 | 中（啟用時） | `cam` / `routing_table` | 未命中時輸出 `ram[0]`；CAM 填滿 64 筆後，未知目的位址都送往 entry 0 的埠 | SIF 端學到 64 個以上 MAC | R | `routing_table` 依 `cam_data_val` 決定，未命中時丟棄 |
+| BR-9 | 低 | `routing_table` | SIF 學習請求與 host 查詢同一拍時，授權照給、寫入被壓掉，學習遺失 | SIF 與 host 流量同時存在 | R | 仲裁器的 `idle` 接 `!(|i_mac_req)`，或 `mac_valid` 只在 `cam_wr` 時清除 |
 
 ### 周邊
 
@@ -100,6 +102,8 @@
 | PE-10 | 低 | `i2s_serdes` | PCM 格式等同 LJ；RX 的 L / R 沒有標記，溢位後可能左右對調；`i_rx_ready` 沒有使用 | 使用 PCM / 溢位 | R + I | 實作 DSP 短 frame sync；RX 輸出加聲道位元（例如 `tuser`） |
 | PE-11 | 低 | `ram_player` | `timer = 0` 時不循環；`window_size < W_KEEP` 時沒有 `tlast`；中途停止時收尾拍可能未被接受就撤回 | 測試設定 | R | 循環條件只看 `loop_dis`；`DONE` 時保持 `tvalid` 直到 `tready` |
 | PE-12 | 低 | `imu_top` | `axis_buffer` 輸入不看 `tready`，下游反壓時遺失；每 frame 多 1 個樣本 | 使用 `imu_top`（目前沒有板級使用） | R | 接上 `tready`；比較改成 `samples_per_frame − 1` |
+| PE-13 | 低 | `delayed_io` | 取消與立即設定不會停止計數器；計數中送出的新延遲操作在舊的到期時間執行 | 取消後馬上重新排程 | R | 計數器加 `cancel` 輸入，或新要求時重新載入計數 |
+| PE-14 | 低 | `delayed_io` | CPNX100 用預設 `CLK_FREQ`，`CYCLES_PER_US` 進位成 20，延遲多 2.4 % | 需要精確延遲 | R | 板級傳入實際 APB 頻率，並用定點數換算 |
 
 ### 註解與死碼（不影響功能）
 
