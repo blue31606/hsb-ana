@@ -55,8 +55,6 @@
    - [數值驗證](docs/verification-calcs.md)：`tools/verify/verify_calcs.py` 對 checksum、CRC、排程、版面等可計算結論的獨立比對。
    - [定向測試計畫](docs/test-plan.md)：對應問題清單的測試與 SystemVerilog 草稿（`tests/`）。
    - [驗證狀態](VERIFICATION.md)：每項結論是怎麼確認的，以及各版的修正。
-6. **特定用途**（不屬於中立分析）：
-   - [1722 listener 整合](docs/integration-1722.md)：把 Ethernet → Sensor TX 路徑改成 IEEE 1722 listener 時，HSB 端會碰到的問題、需要改的地方與需要確認的項目。
 
 分析深度：**逐行** = 每個 always / assign 都讀過；**主要邏輯** = FSM、資料格式、暫存器都讀過，輔助邏輯略讀；**介面 / 暫存器層級** = 只讀介面、暫存器與註解。
 
@@ -120,4 +118,4 @@ python3 tools/model/rx_parser_model.py
 | v4 | `ddb130a` | `packetizer`、`dp_pkt_top`、PTP 補到逐行並加時序圖；新增端到端流程、效能分析、完整暫存器索引；周邊狀態機與時脈公式；板級感測器接收路徑；testbench 流程與檢查項目 |
 | v5 | `fc2b904` | 重畫頂層方塊圖並新增跨時脈地圖、控制平面 / Data Plane 全貌；`rx_ls_parser`、`roce_icrc`、`roce_ack`、Bridge、APB、開機與 reset 補到逐行；CDC 元件逐行並逐一檢查使用處 |
 | v6 | `1981132` | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題；之後補上 `lfsr_hc` 全部寬度的數值驗證、追完稽核留下的 2 項、`delayed_io` 逐行 |
-| v7 | 目前版本 | 推斷項目重新追 RTL：DP-1、DP-2、BR-1、DP-13、TX-7、PE-7 全部升為 R 或 R + M，BR-1 與 `rx_parser` 讀出空檔更正；新增逐拍模型（方法 M）與 DP-15（Terasic S10 在 100G 下連續短封包溢位）；新增測試草稿靜態檢查並修正 S6 的巨集名稱；新增 S8–S12 定向測試（TX-6、TX-7、TX-8、DP-1 / DP-2、PE-7）；新增 1722 listener 整合文件 |
+| v7 | 目前版本 | 推斷項目重新追 RTL：DP-1、DP-2、BR-1、DP-13、TX-7、PE-7 全部升為 R 或 R + M，BR-1 與 `rx_parser` 讀出空檔更正；新增逐拍模型（方法 M）與 DP-15（Terasic S10 在 100G 下連續短封包溢位）；新增測試草稿靜態檢查並修正 S6 的巨集名稱；新增 S8–S12 定向測試（TX-6、TX-7、TX-8、DP-1 / DP-2、PE-7） |
