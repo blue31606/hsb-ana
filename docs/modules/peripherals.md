@@ -84,7 +84,7 @@ stateDiagram-v2
 f_SCL ≈ f_APB / (2 × clk_cnt)
 ```
 
-host 軟體固定寫 `clk_cnt = 0x19`（註解「400 kHz」，`hololink.cpp` `set_i2c_clock()`）。以 CPNX100 的 APB 19.53 MHz 計算是 390 kHz，與註解一致（X）。對方拉低 SCL（clock stretching）時分頻計數暫停。
+host 軟體固定寫 `clk_cnt = 0x19`（註解「400 kHz」，`hololink.cpp` `set_i2c_clock()`）。以 CPNX100 的 APB 19.53 MHz 計算是 390 kHz，與註解一致（X）。這個值沒有依板級調整：同樣的 `0x19` 在 APB 50 MHz 的 PYNQ 是 1 MHz、在 APB 100 MHz 的 S10 是 2 MHz，0x10 的 stretch 逾時 reset 值也從 256 ms 變成 100 ms / 50 ms（R，依上式計算）。host 只在相機驅動的 `setup_clock()`（IMX274、IMX715、VB1940）中呼叫 `set_i2c_clock()`，這些相機接在 CPNX100 類板級，所以目前不會遇到（X + I）；同類問題見 [PE-16](../issues.md)。對方拉低 SCL（clock stretching）時分頻計數暫停。
 
 **逾時**（[i2c.sv#L126](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c.sv#L126)、[i2c.sv#L179](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c.sv#L179)）：交易中 SDA 低、SCL 低或位元組傳送中，`timeout_cnt` 都會累加；到達 0x10 的值（預設 5,000,000 個 APB 時脈 ≈ 256 ms）時設 `al`，FSM 直接回 `IDLE` / `DONE`。**`status[2]`「arbitration lost」實際上是這個逾時**，RTL 沒有多 master 仲裁偵測。
 

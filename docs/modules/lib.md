@@ -25,7 +25,7 @@
 | `axis_reg` | 104 | AXIS 暫存級，`SKID = 1` 時為 skid buffer | 多處 |
 | `axis_checker` | 126 | 斷言：`tvalid` 時資料穩定、`tlast` 規則、封包長度（`ASSERT_ON` 時） | `HOLOLINK_top`、`eth_pkt`、`dp_pkt_top`、`ptp_*` |
 | `axis_demux` | 136 | 依 index 分流 | **未使用** |
-| `axis_pkg` | 81 | 型別定義 | |
+| `axis_pkg` | 81 | package：host / sensor 寬度的 byte 反轉（`*_end_swap`）、one-hot 與十進位互轉函式 | `rx_parser`、`rx_ls_parser`、`arp_ping_pkt_proc`、`ptp_ingress`、`data_gen`、`ram_player`、`tx_stream_buffer`、`roce_ack` |
 
 ## 其他元件（`misc`）
 
@@ -203,8 +203,13 @@ RTL 沒有補償這段延遲；`dp_pkt_top` 的 metadata 與 CoE 時間戳都取
 | `ptp_dly` 送出欄位、`bootp` PPS + 時間 | `reg_cdc` | ✓ 每秒或每個 Sync 一次 |
 | ECB `cmd_addr` / `cmd_rddata` | `data_sync`（32 bit） | ✓ 資料先固定、控制後同步 |
 | ECB `cmd_dout` | **無** | 依賴時序：資料在 `apb_send_cmd` 前固定。需要合成約束 |
+| ECB `ecb_wr`（決定 APB 端的 `cmd_wren`） | **無** | 同 `cmd_dout`：由 HIF 端鎖住的指令解碼，在 `apb_send_cmd` 前固定（[ecb_rdwr_ctrl.sv#L451–L455](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ecb/ecb_rdwr_ctrl.sv#L451-L455)）。需要合成約束 |
+| `s_apb_ram` 位址、資料、位址錯誤旗標 | `data_sync`（只同步 `reg_wren` / `reg_rden`） | ✓ 與 `s_apb_reg` 相同：資料在 APB 端先固定，`pclk` 端只在同步後的 enable 下使用（[s_apb_ram.sv#L107–L137](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_ram.sv#L107-L137)） |
+| `delayed_io` 設定與狀態 | 一級暫存器 | ✗ 見 [ref_design 注意事項 5](ref_design.md)；CPNX100 兩個時脈相同，不受影響 |
 | packetizer RAM 寫入 | `data_sync`（單拍脈衝，取下降緣） | 條件：SIF RX 時脈不慢於 APB 時脈，否則脈衝可能取樣不到 |
 | packetizer SOF、VP 0 結尾、`axis_buffer_tx` 封包計數、PTP TX 時間戳 | `pulse_sync` | ✓ 事件間隔遠大於同步延遲（一個 frame / 封包一次） |
 | `hsb_stat`（8 bit） | `data_sync` | 各 bit 意義獨立，短暫混合值只影響一次 BOOTP 的內容 |
 | `ctrl_bus_evt_int` 的 24-bit `timeout` 等設定 | `data_sync` | 準靜態設定，改寫瞬間可能短暫看到混合值 |
 | `init_done`、EEPROM IP valid | `data_sync` | ✓ 單 bit；IP 本身只同步 valid，資料視為靜態 |
+
+[`tools/scan_cdc.py`](../../tools/scan_cdc.py) 在每個檔案內找「A 時脈的暫存器（含經過 `assign` / `always_comb` 的組合邏輯）被 B 時脈的 `always_ff` 讀取」：115 個檔案中有 8 個檔案內部有跨時脈，共 23 處；5 處是同步器或準靜態設定（依名稱判斷），其餘 18 處逐一讀過（[`scan_cdc_reviewed.txt`](../../tools/scan_cdc_reviewed.txt)），全部落在上表或屬於 RAM / FIFO 的記憶體陣列，沒有新的問題（R）。跨模組（經由埠）的跨時脈不在這個掃描範圍內，仍以上表為準。

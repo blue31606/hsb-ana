@@ -86,7 +86,7 @@
 | BR-4 | 低 | `bridge` | host 端 Sync 一律量到 SIF 0 | Sync 送往其他 SIF 埠 | R | 每埠各自量測 |
 | BR-5 | 低 | `bridge` | 只支援 Layer 2 PTP；未知 unicast 與一般 multicast 丟棄；CAM 不老化 | IPv6、mDNS、裝置換 MAC | R | 依需求加入 flood 與老化 |
 | BR-6 | 低 | `bridge` | host 來源固定優先於 SIF | host 流量持續 | R | round-robin |
-| BR-7 | 中（啟用時） | `eth_pkt` / `bridge` | `o_del_req_val` 用 `out_idx == 4`（PAUSE）判斷，Bridge 是 index 5；Bridge 轉送的 Delay_Req 不會停止 residence time 量測 | 啟用 Bridge 且 SIF 端裝置送 Delay_Req | R | 比較改成 Bridge 的 index（`'d5`），最好用具名參數 |
+| BR-7 | 中（啟用時） | `eth_pkt` / `bridge` | `o_del_req_val` 用 `out_idx == 4`（PAUSE）判斷，Bridge 是 index 5；Bridge 轉送的 Delay_Req 不會停止 residence time 量測；記錄來源的 `ptp_del_req_buffer` 只依 host 0 讀出（`ptp_port = 0`），轉往 host 1 的 Delay_Req 會讓它錯位 | 啟用 Bridge 且 SIF 端裝置送 Delay_Req | R + I | 比較改成 Bridge 的 index（`'d5`），最好用具名參數；`rd_ptp_fifo` 改看所有 host 的 `i_del_req_val` |
 | BR-8 | 中（啟用時） | `cam` / `routing_table` | 未命中時輸出 `ram[0]`；CAM 填滿 64 筆後，未知目的位址都送往 entry 0 的埠 | SIF 端學到 64 個以上 MAC | R | `routing_table` 依 `cam_data_val` 決定，未命中時丟棄 |
 | BR-9 | 低 | `routing_table` | SIF 學習請求與 host 查詢同一拍時，授權照給、寫入被壓掉，學習遺失 | SIF 與 host 流量同時存在 | R | 仲裁器的 `idle` 接 `!(|i_mac_req)`，或 `mac_valid` 只在 `cam_wr` 時清除 |
 
@@ -109,6 +109,7 @@
 | PE-13 | 低 | `delayed_io` | 取消與立即設定不會停止計數器；計數中送出的新延遲操作在舊的到期時間執行 | 取消後馬上重新排程 | R | 計數器加 `cancel` 輸入，或新要求時重新載入計數 |
 | PE-14 | 低 | `delayed_io` | CPNX100 用預設 `CLK_FREQ`，`CYCLES_PER_US` 進位成 20，延遲多 2.4 % | 需要精確延遲 | R | 板級傳入實際 APB 頻率，並用定點數換算 |
 | PE-15 | 低 | `i2s_top`（host + RTL） | host 讀 I2S 狀態用 `I2S_APB + 0x24`–`0x30`，RTL（`W_OFST = 12`）的狀態區在 `0x800`；host 的讀取得到 `pslverr` / ECB 回應碼 0x03，`clock_locked()`、`tx_underrun()`、`rx_overrun()` 都無法正常運作 | CPNX100 使用 I2S | R + X | host 改用 `0x800`–`0x80C`；或 `i2s_top` 傳 `W_OFST = 8` 並把 host 位址改為 `0x80` 起 |
+| PE-16 | 低 | `ctrl_bus_evt`（host + RTL） | `ctrl_evt_apb_timeout` 以 APB 時脈計數（`timer_cnt` 在 `i_aclk = i_apb_clk` 上加一），host 卻固定用 51.2 ns 換算（`APB_TIMEOUT_SCALE = 1 / 51.2e-9`、`0x3937` 註解「750us」），這只對 19.53 MHz 的 APB 成立。PYNQ（50 MHz）的實際逾時是預期的 0.41 倍，S10（100 MHz）是 0.20 倍；I2C 等事件序列可能在 host 認為還沒逾時前就被中止並觸發錯誤事件 | PYNQ、S10 使用事件序列（I2C 交易） | R + X | host 依板級的 APB 頻率換算；或 RTL 加一個固定 51.2 ns 的 tick |
 
 ### 註解與死碼（不影響功能）
 

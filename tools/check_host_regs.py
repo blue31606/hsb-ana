@@ -81,11 +81,9 @@ def lookup(regs, addr):
     return None
 
 
-def main():
-    if len(sys.argv) != 2:
-        print(__doc__)
-        return 2
-    up = Path(sys.argv[1]) / "src/hololink"
+def host_rows(up):
+    """(file, constant, absolute address, (rtl name, block) or None) for every host constant."""
+    up = Path(up) / "src/hololink"
     regs = rtl_index()
     allc = {}
     for f in sorted({g[0] for g in GROUPS}):
@@ -106,6 +104,14 @@ def main():
             rows.append((f, n, addr, hit))
             if hit is None:
                 missing.append((f, n, addr))
+    return rows, missing, bad
+
+
+def main():
+    if len(sys.argv) != 2:
+        print(__doc__)
+        return 2
+    rows, missing, bad = host_rows(sys.argv[1])
     print(f"[RESULT] {len(rows)} host address constants, {len(rows) - len(missing)} found in the RTL index")
     for f, n, addr, hit in rows:
         tag = f"{hit[0]}  ({hit[1]})" if hit else "MISSING"

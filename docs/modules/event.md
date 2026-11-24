@@ -99,7 +99,7 @@ addr = 0xFFFF_FFFF 表示序列結束
 
 POLL 每次重讀之間有一段由計數器 `cnt` 決定的間隔。
 
-**逾時與錯誤**：序列執行超過 `ctrl_evt_apb_timeout` 個 APB 時脈（0 = 不限）、或 APB 回 `pserr`，序列中止；同時觸發事件 bit 3，並在 `ctrl_evt_stat` 記錄是哪個事件逾時。
+**逾時與錯誤**：序列執行超過 `ctrl_evt_apb_timeout` 個 APB 時脈（0 = 不限）、或 APB 回 `pserr`，序列中止；同時觸發事件 bit 3，並在 `ctrl_evt_stat` 記錄是哪個事件逾時。計數器 `timer_cnt` 在 `i_aclk` 上加一（[ctrl_bus_evt_fsm.sv#L197–L214](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ctrl_bus_evt/ctrl_bus_evt_fsm.sv#L197-L214)），`HOLOLINK_top` 給 `u_rx_ls_parser`（`ctrl_bus_evt_int` 在它裡面）的 `i_aclk` 是 `i_apb_clk`（[HOLOLINK_top.sv#L480](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L480)），所以單位是一個 APB 週期。host 固定用 51.2 ns 換算（`hololink.hpp` 的 `APB_TIMEOUT_SCALE`），只對 APB 19.53 MHz 的 CPNX100、MPF200、NV MIPI 正確；PYNQ（50 MHz）的逾時是預期的 0.41 倍，S10（100 MHz）是 0.20 倍（R + X，[PE-16](../issues.md)）。
 
 ### 3. host 的用法範例
 

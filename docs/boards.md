@@ -23,6 +23,17 @@
 | `ENUM_EEPROM` | ✓ | | ✓ | ✓ | | ✓ |
 | `APB_CLK_FREQ` | 19.53 MHz | | 19.53 MHz | 19.53 MHz | 50 MHz | 100 MHz |
 | `PTP_CLK_FREQ` | 100.45 MHz | | 104.16 MHz | 100.45 MHz | 100 MHz | 100.71 MHz |
+| `SIF_TX_BUF_SIZE` | 4096 | | | | 256 | 2048 |
+| `DATAPATH_WIDTH` | 64 | | 64 | 64 | 512 | 512 |
+| `DATAUSER_WIDTH` | 2 | | 2 | 2 | 1 | 1 |
+| `SPI_INST` | 2 | | 1 | 1 | 1 | 2 |
+| `I2C_INST` | 4 | | 3 | 4 | 1 | 2 |
+| `UART_INST` | 1 | | | | | |
+| `GPIO_INST` | 31 | | 16 | 16 | 31 | 16 |
+| `REG_INST` | 8 | | 1 | 8 | 8 | 8 |
+| `N_INIT_REG` | 22 | | 1 | 16 | 1 | 2 |
+
+`HIF_CLK_FREQ` 以下各列由 [`tools/gen_board_table.py`](../tools/gen_board_table.py) 從各板級的 `HOLOLINK_def.svh` 產生並比對（R）：沒有從外部定義任何巨集，所以 S10 的 `JESD_HIGH_PERF`（repo 內沒有任何地方定義它）走 `else` 分支，`DATAPATH_WIDTH = 512`、VP 大小 128。MPF200 與 NV MIPI 沒有定義 `SENSOR_TX_IF_INST`，`SIF_TX_*` 參數在 `ifdef` 內不生效。PYNQ 的 `BUFFER_4K_REG_MAP` 有定義，但 `nv_hsb_ip` 內沒有任何地方使用（`dp_pkt_top` 的 `BUFFER_4K_REG` 是另一個參數，見 [dp_pkt_top](modules/dp_pkt_top.md)）。
 
 ## 各板級的周邊
 

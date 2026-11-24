@@ -1,0 +1,72 @@
+# Findings of tools/scan_ports.py read by hand (v7.1.2).
+# Format: <module>.<port> <file under fpga/ or *> -- verdict and reason
+# "*" covers every instance. A new instance of a listed port in another file shows up again.
+#
+# --- board tops ---
+HOLOLINK_top.i_sif_axis_tready nv_mipi_ref_design/mipi_cpnx_ref_design/rtl/top/FPGA_top.sv -- OK: SENSOR_TX_IF_INST is commented out in this board's HOLOLINK_def.svh (L102), so the port is compiled out (HOLOLINK_top.sv L80 is under `ifdef)
+HOLOLINK_top.o_sif_axis_tvalid nv_mipi_ref_design/mipi_cpnx_ref_design/rtl/top/FPGA_top.sv -- OK: same `ifdef SENSOR_TX_IF_INST as above
+HOLOLINK_top.o_hif_axis_tready terasic/s10_sensor_bridge/rtl/top/FPGA_top.v -- OK: equals init_done_hif_clk (HOLOLINK_top.sv L381); rx_parser input is gated with init_done inside (L415), so frames before init are dropped, not misparsed
+HOLOLINK_top.o_uart_busy * -- OK: status only; the UART status register carries the same information
+i2s_top.o_pll_locked lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv -- OK: also in the I2S status registers (0x800 area); host reads the wrong offset, see PE-15
+i2s_top.o_rx_overrun lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv -- OK: as above (PE-15)
+i2s_top.o_tx_underrun lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv -- OK: as above (PE-15)
+#
+# --- axis_buffer with o_axis_rx_tready open ---
+axis_buffer.o_axis_rx_tready nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- ISSUE: BR-1 (host RX buffer, NO_BACKPRESSURE = 0, tready not connected)
+axis_buffer.o_axis_rx_tready nv_hsb_ip/rx_parser/rx_parser.sv -- known: NO_BACKPRESSURE = 1 buffers, overflow behaviour is DP-1 / rx_parser notes
+axis_buffer.o_axis_rx_tready nv_hsb_ip/packetizer/virtual_port.sv -- known: NO_BACKPRESSURE = 1, overflow handled by packetizer afull (packetizer notes)
+axis_buffer.o_axis_rx_tready nv_hsb_ip/ref_design/imu/imu_top.sv -- known: ref_design.md IMU note 1 (16-entry buffer, data lost on back-pressure)
+axis_buffer.o_axis_rx_tready nv_hsb_ip/ecb/ecb_rdwr_ctrl.sv -- OK: response buffer BUF_DEPTH = MTU bytes; each 8-byte request pair produces one 8-byte response pair, so the response is never longer than the request (<= MTU)
+axis_buffer.o_fifo_aempty * -- OK: status only, tready / tvalid carry the flow control
+axis_buffer.o_fifo_afull * -- OK: status only
+axis_buffer.o_fifo_empty * -- OK: status only
+axis_buffer.o_fifo_full * -- OK: status only
+axis_buffer_tx.o_axis_rx_tready nv_hsb_ip/sensor_tx/tx_stream_buffer.sv -- known: tx_stream_buffer note 2 (beat loss on overflow)
+axis_buffer_tx.o_buffer_aempty * -- OK: status only
+axis_buffer_tx.o_buffer_afull * -- OK: status only
+axis_buffer_tx.o_buffer_empty * -- OK: status only
+axis_buffer_tx.o_buffer_full * -- OK: status only
+i2s_axis_buffer_rx.o_fifo_aempty * -- OK: status only
+i2s_axis_buffer_rx.o_fifo_afull * -- OK: status only
+i2s_axis_buffer_rx.o_fifo_empty * -- OK: status only
+i2s_axis_buffer_rx.o_fifo_full * -- OK: status only
+dc_fifo_stub.aempty * -- OK: wrapper status, axis_buffer / streaming_cdc use their own flags
+dc_fifo_stub.afull * -- OK: as above
+dc_fifo_stub.full * -- OK: as above
+#
+# --- combinational stages with the sink always ready ---
+axis_drop.i_axis_tx_tready nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv -- OK: sink has no back-pressure; o_axis_rx_tready = i_axis_tx_tready = 1
+axis_drop.o_axis_rx_tready nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv -- OK: as above
+axis_remove.i_axis_tx_tready nv_hsb_ip/rx_parser/rx_parser.sv -- OK: VLAN removal feeds a NO_BACKPRESSURE path
+axis_remove.o_axis_rx_tready nv_hsb_ip/rx_parser/rx_parser.sv -- OK: as above
+axis_mask.i_axis_tx_tready nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- OK: feeds the SIF TX buffer (NO_BACKPRESSURE = 1, depth 2 x HOST_MTU); admission is per packet by sif_tx_buffer_afull at half depth (L413, L465, L675)
+axis_mask.o_axis_rx_tready nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- OK: as above
+axis_to_vec.i_done * -- OK: header capture only, data path not gated (rx_parser.md)
+axis_to_vec.o_axis_rx_tready * -- OK: as above
+axis_to_vec.o_busy * -- OK: status only
+vec_to_axis.is_busy * -- OK: status only
+#
+# --- FIFOs with full open ---
+sc_fifo.full nv_hsb_ip/rx_parser/rx_parser.sv -- known: metadata FIFOs, DP-1 (one more packet than META_FIFO_DEPTH in flight misaligns them)
+sc_fifo.full nv_hsb_ip/roce/roce_ack.sv -- known: err_fifo is written per packet and read with hdr_rden together with rx_parser hdr_buffer (same META_FIFO_DEPTH)
+sc_fifo.full nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- dest_buffer: one entry per packet and the host port is held until it is answered, OK; ptp_del_req_buffer: never read because of BR-7 and read only for host 0 (ptp_port = 0), see bridge note 9
+sc_fifo.full nv_hsb_ip/lib_axis/axis_buffer.sv -- OK: latency_buffer depth 8 for a fixed pipeline latency
+sc_fifo.full nv_hsb_ip/misc/moving_avg.sv -- OK: fixed window, one write and one read per sample after fill
+sc_fifo.afull * -- OK: status only
+sc_fifo.aempty * -- OK: status only
+sc_fifo.empty * -- OK: status only
+reg_fifo.full nv_hsb_ip/roce/roce_icrc.sv -- OK: crc_buffer depth 2, input stalls through crc_inflight_cnt (L291)
+reg_fifo.full nv_hsb_ip/ctrl_bus_evt/ctrl_bus_evt_fsm.sv -- known: event FIFO depth 8 (event.md)
+reg_fifo.full nv_hsb_ip/dp_pkt/dp_pkt_ts.sv -- known: timestamp FIFO (dp_pkt_top.md)
+#
+# --- other ---
+i2c.ack_stretch * -- OK: ACK-phase stretch state unused; SCL clock stretching itself is handled (stretch_timeout register)
+i2c_ctrl_fsm.o_data_valid nv_hsb_ip/top/HOLOLINK_top.sv -- OK: read data goes through the register file
+uart_ctrl_fsm.uart_enable_override nv_hsb_ip/top/HOLOLINK_top.sv -- OK: debug override disabled
+reset_sync.i_locked nv_hsb_ip/reset_gen/reset_gen.sv -- OK: board tops fold PLL lock into i_sys_rst (S10 FPGA_top.v L380; CPNX100 clk_n_rst.sv L143; PYNQ and NV MIPI pass the lock into their reset module)
+m_apb_reg.o_ready nv_hsb_ip/sys_init/sys_init.sv -- OK: o_done and o_err are used
+rrarb.gnt_idx * -- OK: one-hot gnt is used instead
+s_apb_ram_dyn.o_rd_data_valid * -- OK: APB read returns through pready
+imu.o_busy * -- OK: status only
+pause_gen.o_busy * -- OK: status only
+ptp_egress.o_ptp_egress_busy * -- OK: status only

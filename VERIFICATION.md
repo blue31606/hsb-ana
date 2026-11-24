@@ -104,7 +104,13 @@
 | I2S RX 緩衝 almost full 時樣本不寫入，丟掉奇數個樣本後左右對調（v7.1.1：由 I 升為 R） | R | [ref_design §i2s_top](docs/modules/ref_design.md#i2s_top) |
 | host 讀 I2S 狀態用 `0x24`–`0x30`，RTL 狀態區在 `0x800`，讀取得到 `pslverr`（PE-15，v7.1.1 新增） | R + X | [ref_design §i2s_top](docs/modules/ref_design.md#i2s_top) |
 | host 用到的 96 個位址常數中 87 個在 RTL 暫存器索引找得到；其餘 9 個是 I2S 狀態 4 個（PE-15）與 S10 的 JESD 廠商 IP 5 個（不在本 repo 的 RTL 內） | X（自動） | `tools/check_host_regs.py` |
-| 文件中 622 個原始碼連結的行號都在檔案範圍內；222 個可依識別字判斷的連結中，195 個自動吻合、27 個人工確認 | 自動 + 人工 | `tools/check_links.py`、`tools/check_links_reviewed.txt` |
+| 文件中 628 個原始碼連結的行號都在檔案範圍內；228 個可依識別字判斷的連結中，201 個自動吻合、27 個人工確認 | 自動 + 人工 | `tools/check_links.py`、`tools/check_links_reviewed.txt` |
+| 290 個實例中，握手 / 狀態類埠空接 131 處、輸入綁常數 14 處，全部人工分類（v7.1.2）：新問題只有 Bridge `ptp_del_req_buffer` 只依 host 0 讀出（併入 BR-7），其餘是已知問題（BR-1、DP-1、tx_stream_buffer、IMU）或刻意設計 | R（掃描 + 人工） | `tools/scan_ports.py`、`tools/scan_ports_reviewed.txt` |
+| `nv_hsb_ip` 的 115 個檔案、115 個模組 / package 都在文件中出現；文件表格的 23 個「行數」欄與原始碼一致 | 自動 | `tools/check_coverage.py` |
+| 各板級 `HOLOLINK_def.svh` 的 22 列設定（132 格）與 [boards.md](docs/boards.md#設定比較) 一致；補上 9 列（`SIF_TX_BUF_SIZE`、`DATAPATH_WIDTH`、各周邊實例數、`N_INIT_REG` 等） | 自動 | `tools/gen_board_table.py` |
+| host 寫入的 597 個常數值中，526 個可對到 `regmap_pkg` 暫存器且非 0，都沒有寫到 RTL 不讀的位元 | X（自動） | `tools/check_host_bits.py` |
+| `ctrl_evt_apb_timeout` 以 APB 週期計數，host 固定用 51.2 ns 換算，PYNQ / S10 的逾時只有預期的 0.41 / 0.20 倍（PE-16，v7.1.2 新增） | R + X | [event](docs/modules/event.md) |
+| 檔案內跨時脈 23 處：5 處依名稱判定為同步器或準靜態設定，18 處人工確認，沒有新問題 | R（掃描 + 人工） | `tools/scan_cdc.py`、`tools/scan_cdc_reviewed.txt`、[lib §HSB 中的使用檢查](docs/modules/lib.md#hsb-中的使用檢查) |
 
 ## 時序圖
 
@@ -145,6 +151,7 @@
 | Data Plane 封包間隔 | v6 估約 3 拍 + `eth_pkt` 1 拍；「兩埠無法同時達到線速」 | v7.1：4 + d 拍（d = 0–3）；兩個 host 各一個 VP 時可同時達到單一 host 的速率（M） |
 | BR-2 修正建議 | v6 寫「用 `axis_mask` 的 `OP = "ADD"`」 | v7.1：`axis_mask` 只有 OR / AND，需要另加加法器 |
 | UART U2 測試預期 | v6 寫「`ERR_PPM` > 0 失敗」 | v7.1：約 116 ppm 以上才失敗（M） |
+| `axis_pkg` | v3 寫「型別定義」 | v7.1.2：byte 反轉與 one-hot 轉換函式（`tools/check_coverage.py` 找到） |
 
 ## 建議的下一步驗證
 
