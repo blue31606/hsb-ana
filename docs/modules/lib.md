@@ -68,7 +68,7 @@
 
 - FIFO 裡 `tkeep` 存成最高有效 byte 的 index，假設 `tkeep` 是連續低位 1。
 - `WAIT2SEND`：輸入端每寫入一個 `tlast` 計數 + 1，雙時脈時以 Gray code 經 2 級同步器送到輸出端；計數不同代表有完整封包可讀。送出 `tlast` 的那一拍不預讀，所以封包間至少一拍空檔。
-- `NO_BACKPRESSURE = 1`：FIFO 滿時 `sc_fifo` 丟掉 beat（`wr_en = wr & ~full`），但 `WAIT2SEND` 的封包計數 `in_pkt_cnt` 加的是 `fifo_wren && tlast`，`fifo_wren` 不看 `full`。`tlast` 被丟掉時計數永遠比實際多 1，之後 `WAIT2SEND` 的保證失效，直到 reset（R + M，v7；`rx_parser` 中的後果見 [rx_parser 注意事項 5](rx_parser.md#注意事項)）。
+- `NO_BACKPRESSURE = 1`：FIFO 滿時 `sc_fifo` 丟掉 beat（`wr_en = wr & ~full`），但 `WAIT2SEND` 的封包計數 `in_pkt_cnt` 加的是 `fifo_wren && tlast`，`fifo_wren` 不看 `full`。`tlast` 被丟掉時計數永遠比實際多 1，之後 `WAIT2SEND` 的保證失效，直到 reset（R + M，`rx_parser` 中的後果見 [rx_parser 注意事項 5](rx_parser.md#注意事項)）。
 - `NO_BACKPRESSURE = 0` 但 `o_axis_rx_tready` 沒有接出去時（Bridge 的 host RX 緩衝）：almost full 後 `gbx_axis_tready = 0`，上游送來的 beat 不會寫入，`tlast` 也不計數；被截斷的封包永遠不完整，`WAIT2SEND` 永遠不放行（[bridge 注意事項 7](bridge.md#注意事項)）。
 
 `sensor_tx/axis_buffer_tx.sv` 是它的修改版：拿掉 `WAIT2SEND`、輸入端 `tready` 綁 1、讀出端等下游 `tready` 才預讀，讓輸出 `tvalid` 連續。
@@ -143,7 +143,7 @@
 - 握手進行中（`a_val_qq = 1`）又來一次 `i_a_val`：`a_reg_q` 被更新，但不會再發起握手，B 端保留舊值，直到下一次 `i_a_val`。
 - 請求剛放下、但 ack 還沒同步回來（`b2a_ack_sync[1] = 1`）時來一次 `i_a_val`：`a_reg_qq` 被更新，但請求被 ack 擋住沒有拉高，同樣不會送到 B 端。
 
-**在 `s_apb_reg` 中的影響（v7.1，R + M）。** `s_apb_reg` 每個控制暫存器各有一個 `reg_cdc`，但 `i_a_val` 都接同一個 `reg_wdval`（[s_apb_reg.sv#L94](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L94)、[#L173–L185](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L173-L185)），它在**同一個區塊的任何一個暫存器**被寫入時都會產生脈衝。所以第一次寫入啟動了所有暫存器的握手，握手結束前第二次寫入**另一個**暫存器，那個暫存器的新值也不會送出（直到下一次寫入）。遺失與否取決於兩次寫入的間隔和兩端時脈比：
+**在 `s_apb_reg` 中的影響（R + M）。** `s_apb_reg` 每個控制暫存器各有一個 `reg_cdc`，但 `i_a_val` 都接同一個 `reg_wdval`（[s_apb_reg.sv#L94](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L94)、[#L173–L185](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L173-L185)），它在**同一個區塊的任何一個暫存器**被寫入時都會產生脈衝。所以第一次寫入啟動了所有暫存器的握手，握手結束前第二次寫入**另一個**暫存器，那個暫存器的新值也不會送出（直到下一次寫入）。遺失與否取決於兩次寫入的間隔和兩端時脈比：
 
 - `apb_switch` 每次 transaction 後進 `DELAY` 數到 10（[apb_switch.sv#L168](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_switch.sv#L168)），加上 `REQUESTED`、`penable` 與 `s_apb_reg` 兩級暫存的 `pready`，同一個 master 的連續寫入至少相隔 16 個 APB 時脈。
 - [`tools/model/reg_cdc_model.py`](../../tools/model/reg_cdc_model.py) 照 `reg_cdc` 逐暫存器模擬兩個時脈、掃過 B 端相位：模組時脈 ≥ 8 倍 APB 時需 ≥ 6 拍、相同頻率需 ≥ 10 拍、APB 為模組時脈 2 倍時需 ≥ 16 拍；**模組時脈低於 APB 時脈約 0.48 倍時，16 拍的間隔不夠，會遺失**。
@@ -160,7 +160,7 @@
 | 來源較快 | 8-bit 相位累加器把寫入速率壓到目的端頻率的 99 % 以下，例如 PTP 100.45 MHz → APB 19.53 MHz：`PHASE_INCREMENT = 49`，寫入速率 = 49/256 × 100.45 ≈ 19.23 MHz |
 | 起動 | 目的端離開 reset 後的 `dst_ready` 同步回來源端才開始寫 |
 
-因為寫入速率永遠不超過讀出速率，FIFO 幾乎保持空的。一筆值從寫入到出現在 `o_dst_data` 的路徑（v7.1 逐行確認，R）：來源端寫入同一拍更新 `wr_gray` → 目的端兩級同步（`SYNC_DEPTH = 2`）→ `rdcount_nxt` 不為 0，下一拍 `empty` 清除（[dc_fifo_generic.sv#L296–L302](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L296-L302)）→ `fifo_rd_en = !fifo_empty`（[streaming_cdc.sv#L142](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/streaming_cdc.sv#L142)）→ 下一拍 `dout` 與 `dval`。共 3 個完整目的端時脈，加上寫入到第一個目的端邊緣的 0–1 個時脈，也就是 **3–4 個目的端時脈**；此外 `o_dst_data` 在兩次更新之間保持不變，來源較慢時最多再舊 1 個來源時脈（來源較快、經相位累加器降速時最多再舊 ⌈256 / `PHASE_INCREMENT`⌉ 個來源時脈）。
+因為寫入速率永遠不超過讀出速率，FIFO 幾乎保持空的。一筆值從寫入到出現在 `o_dst_data` 的路徑（R）：來源端寫入同一拍更新 `wr_gray` → 目的端兩級同步（`SYNC_DEPTH = 2`）→ `rdcount_nxt` 不為 0，下一拍 `empty` 清除（[dc_fifo_generic.sv#L296–L302](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L296-L302)）→ `fifo_rd_en = !fifo_empty`（[streaming_cdc.sv#L142](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/streaming_cdc.sv#L142)）→ 下一拍 `dout` 與 `dval`。共 3 個完整目的端時脈，加上寫入到第一個目的端邊緣的 0–1 個時脈，也就是 **3–4 個目的端時脈**；此外 `o_dst_data` 在兩次更新之間保持不變，來源較慢時最多再舊 1 個來源時脈（來源較快、經相位累加器降速時最多再舊 ⌈256 / `PHASE_INCREMENT`⌉ 個來源時脈）。
 
 | 板級 | 目的端（HIF） | CDC 固定延遲 | 加上取樣保持（PTP 時脈） |
 |---|---|---|---|
@@ -169,7 +169,7 @@
 | PYNQ RFSoC | 322.27 MHz | 9.3–12.4 ns | 9.3–22.4 ns |
 | Terasic S10 | 201.42 MHz | 14.9–19.9 ns | 14.9–29.8 ns |
 
-RTL 沒有補償這段延遲；`dp_pkt_top` 的 metadata 與 CoE 時間戳都取自這個值。v6 寫的「約 20–40 ns」在 10G 板級大致吻合，但 100G 板級較短。
+RTL 沒有補償這段延遲；`dp_pkt_top` 的 metadata 與 CoE 時間戳都取自這個值。
 
 ### `dc_fifo_generic` / `dc_fifo_stub`
 
@@ -212,4 +212,4 @@ RTL 沒有補償這段延遲；`dp_pkt_top` 的 metadata 與 CoE 時間戳都取
 | `ctrl_bus_evt_int` 的 24-bit `timeout` 等設定 | `data_sync` | 準靜態設定，改寫瞬間可能短暫看到混合值 |
 | `init_done`、EEPROM IP valid | `data_sync` | ✓ 單 bit；IP 本身只同步 valid，資料視為靜態 |
 
-[`tools/scan_cdc.py`](../../tools/scan_cdc.py) 在每個檔案內找「A 時脈的暫存器（含經過 `assign` / `always_comb` 的組合邏輯）被 B 時脈的 `always_ff` 讀取」：115 個檔案中有 8 個檔案內部有跨時脈，共 23 處；5 處是同步器或準靜態設定（依名稱判斷），其餘 18 處逐一讀過（[`scan_cdc_reviewed.txt`](../../tools/scan_cdc_reviewed.txt)），全部落在上表或屬於 RAM / FIFO 的記憶體陣列，沒有新的問題（R）。跨模組（經由埠）的跨時脈不在這個掃描範圍內，仍以上表為準。
+[`tools/scan_cdc.py`](../../tools/scan_cdc.py) 在每個檔案內找「A 時脈的暫存器（含經過 `assign` / `always_comb` 的組合邏輯）被 B 時脈的 `always_ff` 讀取」：115 個檔案中有 8 個檔案內部有跨時脈，共 23 處；5 處是同步器或準靜態設定（依名稱判斷），其餘 18 處逐一讀過（[`tools/reviewed.txt`](../../tools/reviewed.txt)），全部落在上表或屬於 RAM / FIFO 的記憶體陣列，沒有新的問題（R）。跨模組（經由埠）的跨時脈不在這個掃描範圍內，仍以上表為準。

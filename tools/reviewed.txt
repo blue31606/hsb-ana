@@ -1,0 +1,114 @@
+# Findings read by hand, shared by the checking tools.
+# Format: <tool> <key 1> <key 2> -- verdict and reason
+#   check_links  <doc>             <cited file>#L<range>   (the doc line number is not used)
+#   scan_ports   <module>.<port>   <file under fpga/ or *>  (* = every instance)
+#   scan_cdc     <file under fpga/nv_hsb_ip>  <source signal>
+
+# --- check_links ---
+check_links docs/architecture/overview.md HOLOLINK_top.sv#L922-L960 -- gen_eth_pkt block, shows lso_axis_tdata without index
+check_links docs/architecture/overview.md tx_stream_buffer.sv#L155 -- DUAL_CLOCK = 1 of axis_buffer_tx
+check_links docs/modules/boot_and_reset.md eeprom_info.sv#L118-L256 -- register sequence written through m_apb[2] (named in the parent)
+check_links docs/modules/data_gen.md HOLOLINK_top.sv#L1380 -- data_gen instance inside `ifdef SIF_RX_DATA_GEN
+check_links docs/modules/dp_pkt_top.md dp_pkt_hdr.sv#L118-L190 -- states are named AXI_IDLE / AXI_SEND / AXI_LAST
+check_links docs/modules/dp_pkt_top.md dp_pkt_top.sv#L123 -- RST_VAL holds 32'h5CE for dp_pkt_len
+check_links docs/modules/peripherals.md i2c_ctrl_fsm.sv#L353-L354 -- ack_rise is the rising edge of cmd_ack
+check_links docs/modules/peripherals.md spi.sv#L210-L252 -- STATE_SPI_SEND / STATE_SPI_WAIT drive rSDIO
+check_links docs/modules/peripherals.md spi.sv#L100-L112 -- f_sdio_en gives SDIO_en
+check_links docs/modules/peripherals.md spi.sv#L268-L283 -- next command taken from the inputs spi_ctrl_fsm drives
+check_links docs/modules/peripherals.md spi.sv#L253-L258 -- stop is rSpiCmd[`PAUSE]
+check_links docs/modules/peripherals.md uart.sv#L351-L406 -- glitch-filter voting block
+check_links docs/modules/ptp.md ptp_parser.sv#L71-L81 -- o_flag = flags field (twoStepFlag is bit 9)
+check_links docs/modules/ptp.md ptp_dly.sv#L349-L365 -- TX timestamp taken on i_tx_ts_vld (o_ptp_val after pulse_sync)
+check_links docs/modules/ptp.md ptp_dly.sv#L244-L260 -- sequenceId counters
+check_links docs/modules/ptp.md ptp_dly.sv#L398-L410 -- one-step branch sets pdly_ts_ld (= o_dly_ld)
+check_links docs/modules/ptp.md dpll.sv#L63-L107 -- i_pd_vld is ofm_vld at the instance
+check_links docs/modules/ptp.md ptp_timer.sv#L67-L70 -- 32-bit sec declaration
+check_links docs/modules/ref_design.md FPGA_top.sv#L503 -- comment: vsync gets addr[11]=0, delayed_io addr[11]=1
+check_links docs/modules/ref_design.md axis_gearbox.sv#L80 -- slot overwrite in the even-multiple gearbox
+check_links docs/modules/roce.md lfsr_hc.sv#L408-L411 -- else branch passes the state through
+check_links docs/modules/roce_ack.md s_apb_ram.sv#L85 -- reg_addrerr for words beyond R_CTRL
+check_links docs/modules/roce_ack.md roce_ack.sv#L138-L143 -- bits of the ack control register
+check_links docs/modules/rx_ls_parser.md rx_ls_parser.sv#L169-L171 -- dispatch on the one-hot tuser
+check_links docs/modules/rx_ls_parser.md bootp.sv#L454-L460 -- reply latches the address field into ciaddr
+check_links docs/modules/rx_parser.md rx_parser.sv#L799 -- ls_afull_iserr is the fcs_buffer copy of buf_rls_afull
+check_links docs/modules/tx_stream_buffer.md HOLOLINK_top.sv#L1729-L1736 -- tx_pause_req is o_eth_pause at the instance
+
+# --- scan_ports ---
+# --- board tops ---
+scan_ports HOLOLINK_top.i_sif_axis_tready nv_mipi_ref_design/mipi_cpnx_ref_design/rtl/top/FPGA_top.sv -- OK: SENSOR_TX_IF_INST is commented out in this board's HOLOLINK_def.svh (L102), so the port is compiled out (HOLOLINK_top.sv L80 is under `ifdef)
+scan_ports HOLOLINK_top.o_sif_axis_tvalid nv_mipi_ref_design/mipi_cpnx_ref_design/rtl/top/FPGA_top.sv -- OK: same `ifdef SENSOR_TX_IF_INST as above
+scan_ports HOLOLINK_top.o_hif_axis_tready terasic/s10_sensor_bridge/rtl/top/FPGA_top.v -- OK: equals init_done_hif_clk (HOLOLINK_top.sv L381); rx_parser input is gated with init_done inside (L415), so frames before init are dropped, not misparsed
+scan_ports HOLOLINK_top.o_uart_busy * -- OK: status only; the UART status register carries the same information
+scan_ports i2s_top.o_pll_locked lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv -- OK: also in the I2S status registers (0x800 area); host reads the wrong offset, see PE-15
+scan_ports i2s_top.o_rx_overrun lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv -- OK: as above (PE-15)
+scan_ports i2s_top.o_tx_underrun lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv -- OK: as above (PE-15)
+# --- axis_buffer with o_axis_rx_tready open ---
+scan_ports axis_buffer.o_axis_rx_tready nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- ISSUE: BR-1 (host RX buffer, NO_BACKPRESSURE = 0, tready not connected)
+scan_ports axis_buffer.o_axis_rx_tready nv_hsb_ip/rx_parser/rx_parser.sv -- known: NO_BACKPRESSURE = 1 buffers, overflow behaviour is DP-1 / rx_parser notes
+scan_ports axis_buffer.o_axis_rx_tready nv_hsb_ip/packetizer/virtual_port.sv -- known: NO_BACKPRESSURE = 1, overflow handled by packetizer afull (packetizer notes)
+scan_ports axis_buffer.o_axis_rx_tready nv_hsb_ip/ref_design/imu/imu_top.sv -- known: ref_design.md IMU note 1 (16-entry buffer, data lost on back-pressure)
+scan_ports axis_buffer.o_axis_rx_tready nv_hsb_ip/ecb/ecb_rdwr_ctrl.sv -- OK: response buffer BUF_DEPTH = MTU bytes; each 8-byte request pair produces one 8-byte response pair, so the response is never longer than the request (<= MTU)
+scan_ports axis_buffer.o_fifo_aempty * -- OK: status only, tready / tvalid carry the flow control
+scan_ports axis_buffer.o_fifo_afull * -- OK: status only
+scan_ports axis_buffer.o_fifo_empty * -- OK: status only
+scan_ports axis_buffer.o_fifo_full * -- OK: status only
+scan_ports axis_buffer_tx.o_axis_rx_tready nv_hsb_ip/sensor_tx/tx_stream_buffer.sv -- known: tx_stream_buffer note 2 (beat loss on overflow)
+scan_ports axis_buffer_tx.o_buffer_aempty * -- OK: status only
+scan_ports axis_buffer_tx.o_buffer_afull * -- OK: status only
+scan_ports axis_buffer_tx.o_buffer_empty * -- OK: status only
+scan_ports axis_buffer_tx.o_buffer_full * -- OK: status only
+scan_ports i2s_axis_buffer_rx.o_fifo_aempty * -- OK: status only
+scan_ports i2s_axis_buffer_rx.o_fifo_afull * -- OK: status only
+scan_ports i2s_axis_buffer_rx.o_fifo_empty * -- OK: status only
+scan_ports i2s_axis_buffer_rx.o_fifo_full * -- OK: status only
+scan_ports dc_fifo_stub.aempty * -- OK: wrapper status, axis_buffer / streaming_cdc use their own flags
+scan_ports dc_fifo_stub.afull * -- OK: as above
+scan_ports dc_fifo_stub.full * -- OK: as above
+# --- combinational stages with the sink always ready ---
+scan_ports axis_drop.i_axis_tx_tready nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv -- OK: sink has no back-pressure; o_axis_rx_tready = i_axis_tx_tready = 1
+scan_ports axis_drop.o_axis_rx_tready nv_hsb_ip/sensor_tx/sensor_tx_pkt_proc.sv -- OK: as above
+scan_ports axis_remove.i_axis_tx_tready nv_hsb_ip/rx_parser/rx_parser.sv -- OK: VLAN removal feeds a NO_BACKPRESSURE path
+scan_ports axis_remove.o_axis_rx_tready nv_hsb_ip/rx_parser/rx_parser.sv -- OK: as above
+scan_ports axis_mask.i_axis_tx_tready nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- OK: feeds the SIF TX buffer (NO_BACKPRESSURE = 1, depth 2 x HOST_MTU); admission is per packet by sif_tx_buffer_afull at half depth (L413, L465, L675)
+scan_ports axis_mask.o_axis_rx_tready nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- OK: as above
+scan_ports axis_to_vec.i_done * -- OK: header capture only, data path not gated (rx_parser.md)
+scan_ports axis_to_vec.o_axis_rx_tready * -- OK: as above
+scan_ports axis_to_vec.o_busy * -- OK: status only
+scan_ports vec_to_axis.is_busy * -- OK: status only
+# --- FIFOs with full open ---
+scan_ports sc_fifo.full nv_hsb_ip/rx_parser/rx_parser.sv -- known: metadata FIFOs, DP-1 (one more packet than META_FIFO_DEPTH in flight misaligns them)
+scan_ports sc_fifo.full nv_hsb_ip/roce/roce_ack.sv -- known: err_fifo is written per packet and read with hdr_rden together with rx_parser hdr_buffer (same META_FIFO_DEPTH)
+scan_ports sc_fifo.full nv_hsb_ip/routing_table/bridge_pkt_proc.sv -- dest_buffer: one entry per packet and the host port is held until it is answered, OK; ptp_del_req_buffer: never read because of BR-7 and read only for host 0 (ptp_port = 0), see bridge note 9
+scan_ports sc_fifo.full nv_hsb_ip/lib_axis/axis_buffer.sv -- OK: latency_buffer depth 8 for a fixed pipeline latency
+scan_ports sc_fifo.full nv_hsb_ip/misc/moving_avg.sv -- OK: fixed window, one write and one read per sample after fill
+scan_ports sc_fifo.afull * -- OK: status only
+scan_ports sc_fifo.aempty * -- OK: status only
+scan_ports sc_fifo.empty * -- OK: status only
+scan_ports reg_fifo.full nv_hsb_ip/roce/roce_icrc.sv -- OK: crc_buffer depth 2, input stalls through crc_inflight_cnt (L291)
+scan_ports reg_fifo.full nv_hsb_ip/ctrl_bus_evt/ctrl_bus_evt_fsm.sv -- known: event FIFO depth 8 (event.md)
+scan_ports reg_fifo.full nv_hsb_ip/dp_pkt/dp_pkt_ts.sv -- known: timestamp FIFO (dp_pkt_top.md)
+# --- other ---
+scan_ports i2c.ack_stretch * -- OK: ACK-phase stretch state unused; SCL clock stretching itself is handled (stretch_timeout register)
+scan_ports i2c_ctrl_fsm.o_data_valid nv_hsb_ip/top/HOLOLINK_top.sv -- OK: read data goes through the register file
+scan_ports uart_ctrl_fsm.uart_enable_override nv_hsb_ip/top/HOLOLINK_top.sv -- OK: debug override disabled
+scan_ports reset_sync.i_locked nv_hsb_ip/reset_gen/reset_gen.sv -- OK: board tops fold PLL lock into i_sys_rst (S10 FPGA_top.v L380; CPNX100 clk_n_rst.sv L143; PYNQ and NV MIPI pass the lock into their reset module)
+scan_ports m_apb_reg.o_ready nv_hsb_ip/sys_init/sys_init.sv -- OK: o_done and o_err are used
+scan_ports rrarb.gnt_idx * -- OK: one-hot gnt is used instead
+scan_ports s_apb_ram_dyn.o_rd_data_valid * -- OK: APB read returns through pready
+scan_ports imu.o_busy * -- OK: status only
+scan_ports pause_gen.o_busy * -- OK: status only
+scan_ports ptp_egress.o_ptp_egress_busy * -- OK: status only
+
+# --- scan_cdc ---
+scan_cdc ecb/ecb_rdwr_ctrl.sv ecb_wr -- OK: decoded from the latched ECB command (i_pclk) and held for the whole APB command; i_aclk samples it only after apb_send_cmd_sync (data_sync), the usual qualifier scheme
+scan_cdc lib_apb/s_apb_ram.sv reg_addrerr -- OK: captured in i_aclk and held during the handshake; i_pclk uses it only under reg_rden_sync (data_sync), same scheme as s_apb_reg (apb.md)
+scan_cdc lib_apb/s_apb_ram.sv reg_raddr -- OK: as above, qualified by reg_wren_sync / reg_rden_sync
+scan_cdc lib_axis/axis_buffer.sv packet_available -- OK: false positive; the scan merges the two generate branches. DUAL_CLOCK = 1 uses the Gray-coded synchronized count (L283-L311), DUAL_CLOCK = 0 has one clock
+scan_cdc misc/dc_fifo_generic.sv lut_mem -- OK: dual-clock FIFO memory; read pointer is synchronized Gray code
+scan_cdc misc/dc_fifo_generic.sv blk_mem -- OK: as above
+scan_cdc misc/dc_fifo_generic.sv mem -- OK: as above
+scan_cdc misc/dp_ram.sv lut_mem -- OK: TRUE dual port is a RAM primitive; SIMPLE mode reads port B on clk_a, and every instance (spi_ctrl_fsm, i2c_ctrl_fsm, imu, str_fwd_fifo, dp_pkt_ts) is SIMPLE with one clock
+scan_cdc misc/dp_ram.sv blk_mem -- OK: as above
+scan_cdc misc/dp_ram.sv mem -- OK: as above
+scan_cdc ref_design/delayed_io/delayed_io.sv delay_value_us -- known: one-stage capture into proc_clk, ref_design.md delayed_io note 5 (CPNX100 ties both clocks to APB, not affected)
+scan_cdc ref_design/delayed_io/delayed_io.sv output_states_bits -- known: one-stage capture back into cmd_clk, same note; same clock on CPNX100

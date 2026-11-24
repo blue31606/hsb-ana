@@ -11,7 +11,7 @@
 | **低** | 影響小、只在少用的功能或極端條件下出現，或有明確的軟體迴避方式 |
 | **註** | 註解、命名、死碼、沒有接的訊號；不影響功能 |
 
-方法代號沿用 VERIFICATION：**R** 讀 RTL、**X** 與 host 軟體交叉比對、**I** 推斷、**N** 已用 [數值驗證](verification-calcs.md) 確認、**M** 已用[逐拍模型](../tools/model/)重現（v7 新增）。
+方法代號沿用 VERIFICATION：**R** 讀 RTL、**X** 與 host 軟體交叉比對、**I** 推斷、**N** 已用 [數值驗證](verification-calcs.md) 確認、**M** 已用[逐拍模型](../tools/model/)重現。
 
 ## 總表
 
@@ -38,7 +38,7 @@
 
 ### Host → 感測器（SIF TX）與 RoCE ACK
 
-標「啟用時」的項目只在定義 `SIF_TX_ROCE_RC_ENABLE`（`rx_parser` 的 `ENABLE_ROCE_ACK = 1`）時存在；`41cecaa` 的板級設定都沒有定義它，host 軟體送往 HSB 的也只有 UC SEND（v7.1 確認）。
+標「啟用時」的項目只在定義 `SIF_TX_ROCE_RC_ENABLE`（`rx_parser` 的 `ENABLE_ROCE_ACK = 1`）時存在；`41cecaa` 的板級設定都沒有定義它，host 軟體送往 HSB 的也只有 UC SEND。
 
 | ID | 等級 | 模組 | 問題 | 觸發條件 | 方法 | 建議修正 |
 |---|---|---|---|---|---|---|

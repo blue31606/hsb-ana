@@ -46,15 +46,14 @@
    - [板級整合](docs/boards.md)：6 個板級的設定比較、感測器接收路徑（CPNX100 + CLNX17 雙晶片架構）。
    - [驗證環境](docs/testbench.md)：`nv_hsb_ip_simple_tb` 的組成、初始化流程與檢查項目。
 4. **參考資料**：
-   - [完整暫存器索引](docs/registers/all-registers.md)：所有區塊的絕對位址（由 `tools/gen_allregs.py` 產生）
-   - [暫存器表](docs/registers/regmap.md)（`regmap_pkg.sv` 部分，由 `tools/gen_regmap.py` 產生，含註解比對）
+   - [完整暫存器索引](docs/registers/all-registers.md)：所有區塊的絕對位址，含原始碼註解比對（由 `tools/gen_allregs.py` 產生）
    - [位址空間與 RAM](docs/registers/memory-map.md)
    - [時序圖](docs/timing/)
 5. **問題與驗證**：
    - [問題清單](docs/issues.md)：全部 RTL 問題的分級、觸發條件、確認方法與修正草稿。
    - [數值驗證](docs/verification-calcs.md)：`tools/verify/verify_calcs.py` 對 checksum、CRC、排程、版面等可計算結論的獨立比對。
    - [定向測試計畫](docs/test-plan.md)：對應問題清單的測試與 SystemVerilog 草稿（`tests/`）。
-   - [驗證狀態](VERIFICATION.md)：每項結論是怎麼確認的，以及各版的修正。
+   - [驗證狀態](VERIFICATION.md)：每項結論是怎麼確認的，以及自動檢查的結果。
 
 分析深度：**逐行** = 每個 always / assign 都讀過；**主要邏輯** = FSM、資料格式、暫存器都讀過，輔助邏輯略讀；**介面 / 暫存器層級** = 只讀介面、暫存器與註解。
 
@@ -70,52 +69,15 @@
 | 暫存器 | 暫存器表 |
 | 注意事項 | 限制、原始碼的不一致、可能的問題 |
 
-## 工具
+## 工具與重新產生
 
-| 工具 | 用途 |
-|---|---|
-| `tools/gen_regmap.py` | 從 `regmap_pkg.sv` 產生暫存器表，並比對原始碼註解的位址 |
-| `tools/gen_allregs.py` | 產生完整暫存器索引（`regmap_pkg.sv` + 模組內暫存器、RAM、周邊、參考設計） |
-| `tools/verify/verify_calcs.py` | 照 RTL 重寫可計算的運算（checksum、CRC、排程、版面），與獨立參考實作比對；有任何 FAIL 時結束碼為 1 |
-| `tools/wave.py` | 把 `docs/timing/*.wave.json`（WaveDrom 子集）轉成 SVG。GitHub 不支援 WaveDrom，所以 SVG 也一併 commit |
-| `tools/model/rx_parser_model.py` | v7：`rx_parser` 讀出路徑與 Bridge host RX 緩衝的逐拍模型（照 RTL 逐暫存器重寫），重現 DP-1、DP-2、DP-15、BR-1 並計算各板級的線速餘裕；`--wave` 產生 `rx_parser_readout` 時序圖。任何預期不符時結束碼為 1（下同） |
-| `tools/model/dp_pkt_model.py` | v7.1：`dp_pkt_top` header FSM 與封包交接的逐拍模型，計算 Data Plane 封包間隔與速率（performance §3、DP-16） |
-| `tools/model/uart_rx_model.py` | v7.1：UART 接收端逐拍模型（PE-3、PE-4） |
-| `tools/model/roce_ack_model.py` | v7.1：`roce_ack` 回應決策的封包層級模型（TX-1、TX-2、TX-3） |
-| `tools/model/reg_cdc_model.py` | v7.1.1：`reg_cdc` 兩時脈模型，算出 `s_apb_reg` 寫入不遺失所需的間隔（CP-6） |
-| `tools/check_links.py` | v7.1.1：檢查文件中每個原始碼連結的 commit、檔案、行號範圍，並比對引用處的識別字是否出現在所引行內；人工確認過的列在 `tools/check_links_reviewed.txt` |
-| `tools/check_host_regs.py` | v7.1.1：解析 host 軟體的位址常數，逐一對照 RTL 暫存器索引 |
-| `tools/scan_ports.py` | v7.1.2：列出所有實例中空接的握手 / 狀態埠與綁常數的輸入；人工分類列在 `tools/scan_ports_reviewed.txt`，有未分類項目時結束碼為 1 |
-| `tools/check_coverage.py` | v7.1.2：檢查 `nv_hsb_ip` 每個檔案與模組是否出現在文件中，並比對文件表格的「行數」欄 |
-| `tools/gen_board_table.py` | v7.1.2：從各板級 `HOLOLINK_def.svh` 產生設定比較表並與 `docs/boards.md` 逐格比對；`--write` 更新文件 |
-| `tools/check_host_bits.py` | v7.1.2：host 寫入的常數值是否只用到 RTL 實際讀取的位元；`--table` 列出每個 host 常數對應暫存器的使用位元 |
-| `tools/scan_cdc.py` | v7.1.2：檔案內跨時脈的粗篩（含經過組合邏輯者）；人工確認列在 `tools/scan_cdc_reviewed.txt` |
-| `tools/check_tests.py` | v7：靜態核對 `tests/` 草稿用到的埠、參數、testbench 名稱、task 參數個數與階層路徑；不需要 HDL 工具 |
-
-重新產生：
+暫存器索引、板級設定表、時序圖由腳本產生；結論另有數值驗證、逐拍模型與多項靜態檢查。一次跑完：
 
 ```sh
-git clone https://github.com/nvidia-holoscan/holoscan-sensor-bridge ../holoscan-sensor-bridge
-git -C ../holoscan-sensor-bridge checkout 41cecaa81ab906a55e7ec22e5e6989f7e602a4c8
-python3 tools/gen_regmap.py ../holoscan-sensor-bridge > docs/registers/regmap.md
-python3 tools/gen_allregs.py ../holoscan-sensor-bridge > docs/registers/all-registers.md
-python3 tools/wave.py docs/timing/*.wave.json
-python3 tools/verify/verify_calcs.py ../holoscan-sensor-bridge
-python3 tools/check_tests.py ../holoscan-sensor-bridge
-python3 tools/model/rx_parser_model.py
-python3 tools/model/rx_parser_model.py --wave docs/timing/rx_parser_readout.wave.json
-python3 tools/model/dp_pkt_model.py
-python3 tools/model/uart_rx_model.py      # 約 2 分鐘
-python3 tools/model/roce_ack_model.py
-python3 tools/model/reg_cdc_model.py
-python3 tools/check_links.py ../holoscan-sensor-bridge
-python3 tools/check_host_regs.py ../holoscan-sensor-bridge
-python3 tools/scan_ports.py ../holoscan-sensor-bridge
-python3 tools/check_coverage.py ../holoscan-sensor-bridge
-python3 tools/gen_board_table.py ../holoscan-sensor-bridge
-python3 tools/check_host_bits.py ../holoscan-sensor-bridge
-python3 tools/scan_cdc.py ../holoscan-sensor-bridge
+python3 tools/check_all.py ../holoscan-sensor-bridge      # 上游 checkout 到 41cecaa
 ```
+
+各工具說明見 [tools/README](tools/README.md)。
 
 ## 名詞
 
@@ -133,15 +95,4 @@ python3 tools/scan_cdc.py ../holoscan-sensor-bridge
 
 ## 版本紀錄
 
-| 版本 | Commit | 說明 |
-|---|---|---|
-| v1 | `2a6cf26` | 依資料路徑分章的第一版 |
-| v2 | `0158d91` | 每個模組一份文件；加入時序圖、permalink、自動產生的暫存器表、驗證狀態 |
-| v3 | `932292c` | 改為完整、中立的全 IP 分析：新增 PTP、packetizer、事件、APB、開機、周邊、Bridge、RoCE、共用元件、參考設計、板級、驗證環境等文件；`dp_pkt_top`、`rx_ls_parser` 重寫為主要邏輯深度；移除特定應用的設計提案 |
-| v4 | `ddb130a` | `packetizer`、`dp_pkt_top`、PTP 補到逐行並加時序圖；新增端到端流程、效能分析、完整暫存器索引；周邊狀態機與時脈公式；板級感測器接收路徑；testbench 流程與檢查項目 |
-| v5 | `fc2b904` | 重畫頂層方塊圖並新增跨時脈地圖、控制平面 / Data Plane 全貌；`rx_ls_parser`、`roce_icrc`、`roce_ack`、Bridge、APB、開機與 reset 補到逐行；CDC 元件逐行並逐一檢查使用處 |
-| v6 | `1981132` | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題；之後補上 `lfsr_hc` 全部寬度的數值驗證、追完稽核留下的 2 項、`delayed_io` 逐行 |
-| v7 | `37a2b9c` | 推斷項目重新追 RTL：DP-1、DP-2、BR-1、DP-13、TX-7、PE-7 全部升為 R 或 R + M，BR-1 與 `rx_parser` 讀出空檔更正；新增逐拍模型（方法 M）與 DP-15（Terasic S10 在 100G 下連續短封包溢位）；新增測試草稿靜態檢查並修正 S6 的巨集名稱；新增 S8–S12 定向測試（TX-6、TX-7、TX-8、DP-1 / DP-2、PE-7） |
-| v7.1 | `804ebda` | 剩餘推斷項目追完 RTL（DP-6、DP-10、CP-1、CP-5、TX-6、BR-2、PE-5、PE-6 等升為 R 或 R + X）；新增 `dp_pkt_top`、UART、`roce_ack` 模型，Data Plane 封包間隔改由模型計算並更正「兩埠無法同時達到線速」，新增 DP-16；RC 相關項目標為「啟用時」；`rx_parser` 模型改為精確並產生時序圖；新增 S13（DP-8） |
-| v7.1.1 | `3cc940b` | 以讀碼與文字解析補強：DP-12、CP-6、PT-7、PE-10 升為 R / R + X / R + M；新增原始碼連結檢查與 host 位址常數比對；暫存器索引補上 UART 遺漏的 3 個暫存器與 `delayed_io`、`i2s_top` 兩個區塊；找到 host 讀 I2S 狀態的位址與 RTL 不一致（PE-15） |
-| v7.1.2 | 目前版本 | 再以文字解析補強：新增埠空接掃描（找到 Bridge `ptp_del_req_buffer` 只依 host 0 讀出，併入 BR-7）、文件涵蓋率與行數檢查、板級設定表自動產生（補 9 列）、host 寫入值與 RTL 位元比對、檔案內跨時脈粗篩；找到事件序列逾時的單位只對 19.53 MHz APB 成立（PE-16）；更正 `axis_pkg` 描述 |
+目前版本 v7.2。各版內容與更正過的結論見 [CHANGELOG](CHANGELOG.md)。

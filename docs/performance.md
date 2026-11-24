@@ -1,6 +1,6 @@
 # 效能分析
 
-本章從 RTL 參數與行為推算 HSB 的頻寬、效率、延遲與緩衝餘裕。**所有數字都沒有經過 HDL 模擬或硬體量測**；標「推斷」的項目牽涉多個模組的時序交互，誤差可能較大。§3 與 §7 的數字來自照 RTL 逐暫存器重寫的 Python 逐拍模型（v7.1 / v7），可信度介於讀 RTL 與模擬之間。資源使用量（LUT、BRAM）需要合成報告，本 repo 沒有，所以不在範圍內。
+本章從 RTL 參數與行為推算 HSB 的頻寬、效率、延遲與緩衝餘裕。**所有數字都沒有經過 HDL 模擬或硬體量測**；標「推斷」的項目牽涉多個模組的時序交互，誤差可能較大。§3 與 §7 的數字來自照 RTL 逐暫存器重寫的 Python 逐拍模型，可信度介於讀 RTL 與模擬之間。資源使用量（LUT、BRAM）需要合成報告，本 repo 沒有，所以不在範圍內。
 
 ## 1. 介面頻寬
 
@@ -34,7 +34,7 @@ host 預設 MTU 是 1500（見 [flow §注意事項](flow.md#注意事項)）。
 
 ## 3. HSB 內部的封包間隔（逐拍模型）
 
-`dp_pkt_top` 用一個 header FSM 服務所有 host 埠（[dp_pkt_top §5](modules/dp_pkt_top.md#5-header-fsm)），下一個封包的準備工作要等目前封包快結束（`hif_not_busy_soon`）才開始。v7.1 用 [`tools/model/dp_pkt_model.py`](../tools/model/dp_pkt_model.py) 把這段邏輯照 RTL 逐暫存器重寫（FSM、commit 握手、`hif_busy` / `hif_reserved` / `hif_sif_mask`、`dp_pkt` 的計數與 `near_pkt_end`、`dp_pkt_hdr` 與 header / payload 拼接），量測 `dp_pkt_top` 輸出（`dout`）上兩個資料封包之間的空拍。模型假設下游（`roce_icrc`、`eth_pkt`、MAC）永遠 ready、設定 RAM 沒有 APB 存取、VP 一直有資料、frame 很長（沒有 metadata 封包）；這些假設以外的部分沒有建模。
+`dp_pkt_top` 用一個 header FSM 服務所有 host 埠（[dp_pkt_top §5](modules/dp_pkt_top.md#5-header-fsm)），下一個封包的準備工作要等目前封包快結束（`hif_not_busy_soon`）才開始。用 [`tools/model/dp_pkt_model.py`](../tools/model/dp_pkt_model.py) 把這段邏輯照 RTL 逐暫存器重寫（FSM、commit 握手、`hif_busy` / `hif_reserved` / `hif_sif_mask`、`dp_pkt` 的計數與 `near_pkt_end`、`dp_pkt_hdr` 與 header / payload 拼接），量測 `dp_pkt_top` 輸出（`dout`）上兩個資料封包之間的空拍。模型假設下游（`roce_icrc`、`eth_pkt`、MAC）永遠 ready、設定 RAM 沒有 APB 存取、VP 一直有資料、frame 很長（沒有 metadata 封包）；這些假設以外的部分沒有建模。
 
 **一個封包的時間線**（`s` = `hif_not_busy_soon` 拉高的那一拍）：
 
@@ -48,7 +48,7 @@ host 預設 MTU 是 1500（見 [flow §注意事項](flow.md#注意事項)）。
 | `s + 10 + d` | `pkt_commit`（`commit_arm` 先暫存一拍） |
 | `s + 13 + d` | 下一個封包的第一個 header beat（`hdr_trigger` → `dp_pkt_hdr` 狀態機 → `axis_reg`） |
 
-所以空拍 = **4 + d** 拍。v6 估計的「約 3 拍 + `eth_pkt` 1 拍」相當於 d = 0 的情況。
+所以空拍 = **4 + d** 拍。
 
 **`hif_sif_mask` 的相位。** 每個 host 的 VP 公平性遮罩由三個暫存器串成（[dp_pkt_top.sv#L668–L688](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L668-L688)）：`hif_sif_unserved ← ~hif_sif_mask`、`hif_sif_served ← ~|hif_sif_unserved`、`hif_sif_mask ← served ? 0 : (mask | sif_gnt_r)`。只有一個 VP、`sif_gnt_r` 一直指向它時，這是三級反相的環，以 6 拍為週期振盪（3 拍遮住、3 拍放開）。`hif_not_busy_soon` 拉高時剛好被遮住，`sif_req` 就晚 1–3 拍（d）。封包週期是固定的，所以相位會鎖住，每個封包的 d 都一樣，取決於封包長度除以 6 的餘數（[DP-16](issues.md#data-plane-與封包處理)）。
 
@@ -63,7 +63,7 @@ host 預設 MTU 是 1500（見 [flow §注意事項](flow.md#注意事項)）。
 
 64 bit 時 ICRC 在最後一拍放不下，`roce_icrc` 要多送一拍；這裡假設它落在空拍裡，不增加週期（`roce_icrc` 沒有建模）。
 
-**兩個 host、各一個 VP、同時滿載：** 每個 host 每 189 / 509 / 28 / 68 拍送一個封包，也就是兩個 host 同時達到上表 d = 0 的速率（512 bit、MTU 1500 時各 81.0 Gb/s）。VP 輪流被授權時，各 host 的遮罩不再以單一 VP 的方式振盪，d 為 0；FSM 處理一個封包約佔 14 拍，兩個 host 剛好排得下。v6 寫的「兩埠無法同時達到線速」不成立（在上述假設下）。
+**兩個 host、各一個 VP、同時滿載：** 每個 host 每 189 / 509 / 28 / 68 拍送一個封包，也就是兩個 host 同時達到上表 d = 0 的速率（512 bit、MTU 1500 時各 81.0 Gb/s）。VP 輪流被授權時，各 host 的遮罩不再以單一 VP 的方式振盪，d 為 0；FSM 處理一個封包約佔 14 拍，兩個 host 剛好排得下。
 
 結論：
 
@@ -122,7 +122,7 @@ frame 完成通知（metadata 封包）在最後一個資料封包之後立即�
 python3 tools/model/rx_parser_model.py      # 約 7 秒；任何預期不符時結束碼為 1
 ```
 
-**讀出速率。** 背靠背讀出時，n 拍的封包需要 n + 1 拍（64-bit 的 8、9、24、188 拍與 512-bit 的 1、2、8、24 拍都量到剛好多 1 拍）。v6 寫的「至少 2 拍空檔」是錯的。
+**讀出速率。** 背靠背讀出時，n 拍的封包需要 n + 1 拍（64-bit 的 8、9、24、188 拍與 512-bit 的 1、2、8、24 拍都量到剛好多 1 拍）。
 
 **各板級收 60-byte frame 線速時：**
 

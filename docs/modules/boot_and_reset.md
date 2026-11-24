@@ -90,7 +90,7 @@ flowchart LR
 
 ## `glb_ctrl_top`
 
-基底 `0x0000_0000`（[regmap.md](../registers/regmap.md#global-register)）。
+基底 `0x0000_0000`（[all-registers.md](../registers/all-registers.md#區塊總覽)）。
 
 | Offset | 名稱 | 說明 |
 |---|---|---|
@@ -109,6 +109,6 @@ flowchart LR
    - 軟體 reset 後再跑一次：host 之前 I2C 讀取留下的資料。
    - 模擬：`X`。
 
-   無論哪一種，都**不會**保留 reset 值 `CA:FE:C0:FF:EE:00`（R，v7 逐行確認；v6 為推斷）。多塊沒有 EEPROM 的板子會拿到相同的 MAC。
+   無論哪一種，都**不會**保留 reset 值 `CA:FE:C0:FF:EE:00`（R）。多塊沒有 EEPROM 的板子會拿到相同的 MAC。
 2. EEPROM CRC 的檢查方式與寫入工具不一致，而且結果沒有被使用（見上）。
 3. 軟體 reset 期間 APB、HIF、PTP、SIF 全部 reset，BOOTP 取得的 IP 也會遺失，host 必須重新 enumeration。

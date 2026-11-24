@@ -286,7 +286,7 @@ flowchart LR
 
 ## 7. 位址空間
 
-完整的位址表見 [memory-map.md](../registers/memory-map.md)；各暫存器見 [regmap.md](../registers/regmap.md)。
+完整的位址表見 [memory-map.md](../registers/memory-map.md)；各暫存器見 [all-registers.md](../registers/all-registers.md)。
 
 | 範圍 | 目標 |
 |---|---|

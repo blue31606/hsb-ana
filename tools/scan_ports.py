@@ -20,6 +20,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reviewed as reviewed_list  # noqa: E402
+
 KEY = re.compile(r"(tready|ready|valid|full|afull|empty|err|error|overflow|underflow|busy|"
                  r"ack|done|pause|drop|stall|lock|gnt|grant|req)", re.I)
 CONST = re.compile(r"^\s*(\d*'[bdhoBDHO]?[0-9a-fA-F_xXzZ]+|'[01xXzZ]|\d+|\{[^{}]*\}\s*\{\s*1'b[01]\s*\}|"
@@ -164,14 +167,11 @@ def main():
                 rows[(mod, p, f"input = {conns[p]}")].append((f, line, inst))
                 n_tied += 1
     rel = lambda f: str(f).split("/fpga/", 1)[1]
-    # Hand-reviewed findings: "<mod>.<port> <file or *> -- reason" (tools/scan_ports_reviewed.txt).
+    # Hand-reviewed findings: "scan_ports <mod>.<port> <file or *>" in tools/reviewed.txt.
     reviewed = {}
-    rv = Path(__file__).with_name("scan_ports_reviewed.txt")
-    if rv.exists() and not show_all:
-        for ln in rv.read_text().splitlines():
-            if ln.strip() and not ln.startswith("#"):
-                key, where_ = ln.split(" -- ")[0].split()[:2]
-                reviewed.setdefault(key, set()).add(where_)
+    if not show_all:
+        for key, where_ in reviewed_list.load("scan_ports"):
+            reviewed.setdefault(key, set()).add(where_)
     def is_reviewed(mod, p, f):
         w = reviewed.get(f"{mod}.{p}", set())
         return "*" in w or rel(f) in w
@@ -184,7 +184,7 @@ def main():
             left[k] = rest
     print(f"modules parsed: {len(mods)}; instances: {len(insts)}; "
           f"handshake/status ports open: {n_open}, inputs tied to a constant: {n_tied}; "
-          f"reviewed by hand: {n_rev} (tools/scan_ports_reviewed.txt); not reviewed: {sum(map(len, left.values()))}")
+          f"reviewed by hand: {n_rev} (tools/reviewed.txt); not reviewed: {sum(map(len, left.values()))}")
     for (mod, p, kind), where in sorted(left.items(), key=lambda x: (x[0][2] != "INPUT OPEN", x[0][2], x[0][0], x[0][1])):
         locs = "; ".join(f"{rel(f)}:{ln} {inst}" for f, ln, inst in where[:4])
         more = f" (+{len(where) - 4})" if len(where) > 4 else ""

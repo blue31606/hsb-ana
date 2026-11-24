@@ -4,7 +4,8 @@
 
 所有 APB 可存取的暫存器依絕對位址排列（多實例的區塊列實例 0 的位址）。
 
-- 位元細節請點各區塊的文件連結；`regmap_pkg.sv` 內的暫存器另見 [regmap.md](regmap.md)（含原始碼註解比對）。
+- 位元細節請點各區塊的文件連結。`regmap_pkg.sv` 內的暫存器名稱連到原始碼那一行；位址 = 基底 + index × 4，index ≥ 32 是狀態暫存器（`stat_ofst = 32`）；原始碼註解寫的位址不同時標 ⚠️。
+- 基底位址取自 `apb_intc_top.sv` 的 `apb_switch` 設定，host 的位址常數由 `tools/check_host_regs.py` 逐一比對。
 - 類型：RW = 控制暫存器；RO = 狀態暫存器（`s_apb_reg` 的 index ≥ 32）；RW* = RTL 也會寫入；W = 只寫。
 - 未定義位址讀回 `0xBADADD12`（[apb.md](../modules/apb.md#watchdog)）。
 
@@ -37,75 +38,75 @@
 
 | 位址 | 名稱 | 類型 | 區塊 | 說明 |
 |---|---|---|---|---|
-| `0x0000_0000` | `glb_scratch` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0004` | `hsb_ctrl_0` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0008` | `hsb_ctrl_1` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_000C` | `gpio_o_0` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0010` | `gpio_o_1` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0014` | `gpio_o_2` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0018` | `gpio_o_3` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_001C` | `gpio_o_4` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0020` | `gpio_o_5` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0024` | `gpio_o_6` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0028` | `gpio_o_7` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_002C` | `gpio_t_0` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0030` | `gpio_t_1` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0034` | `gpio_t_2` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0038` | `gpio_t_3` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_003C` | `gpio_t_4` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0040` | `gpio_t_5` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0044` | `gpio_t_6` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0048` | `gpio_t_7` | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0080` | `hsb_ver` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0084` | `hsb_date` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0088` | `hsb_stat` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_008C` | `gpio_i_0` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0090` | `gpio_i_1` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0094` | `gpio_i_2` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0098` | `gpio_i_3` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_009C` | `gpio_i_4` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_00A0` | `gpio_i_5` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_00A4` | `gpio_i_6` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_00A8` | `gpio_i_7` | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
-| `0x0000_0100` | `ptp_scratch` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0104` | `ptp_ctrl` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0108` | `ptp_ctrl_profile` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_010C` | `ptp_ctrl_dly` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0110` | `ptp_ctrl_dpll_cfg1` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0114` | `ptp_ctrl_dpll_cfg2` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0118` | `ptp_ctrl_avg_fact` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_011C` | `ptp_ctrl_domain` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0120` | `ptp_ctrl_pcp` | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0180` | `ptp_sync_ts_0` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0184` | `ptp_sync_cf_0` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0188` | `ptp_sync_stat` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_018C` | `ptp_ofm` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0190` | `ptp_mean_dly` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0194` | `ptp_inc` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0198` | `ptp_fa_adj` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_019C` | `ptp_dly_cf_0` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_01A0` | `ptp_ip_dly_asymm` | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
-| `0x0000_0200` | `ctrl_evt_scratch` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0204` | `ctrl_evt_rising` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0208` | `ctrl_evt_falling` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_020C` | `ctrl_evt_clear` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0210` | `ctrl_evt_host_mac_addr_lo` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0214` | `ctrl_evt_host_mac_addr_hi` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0218` | `ctrl_evt_host_ip_addr` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_021C` | `ctrl_evt_host_udp_port` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0220` | `ctrl_evt_dev_udp_port` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0224` | `ctrl_evt_apb_interrupt_en` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0228` | `ctrl_evt_apb_timeout` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_022C` | `ctrl_evt_sw_event` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0230` | `ctrl_evt_vlan` | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0280` | `ctrl_evt_stat` | RO | [Control Bus Event](../modules/event.md#暫存器) |  |
-| `0x0000_0300` | `ecb_scratch` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
-| `0x0000_0304` | `ecb_addr_lsb` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
-| `0x0000_0308` | `ecb_addr_msb` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
-| `0x0000_030C` | `ecb_rkey` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
-| `0x0000_0310` | `ecb_pkey` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
-| `0x0000_0314` | `ecb_dest_qp` | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
-| `0x0000_0380` | `ecb_stat` | RO | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0000` | [`glb_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L87) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0004` | [`hsb_ctrl_0`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L88) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0008` | [`hsb_ctrl_1`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L89) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_000C` | [`gpio_o_0`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L90) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0010` | [`gpio_o_1`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L91) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0014` | [`gpio_o_2`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L92) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0018` | [`gpio_o_3`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L93) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_001C` | [`gpio_o_4`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L94) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0020` | [`gpio_o_5`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L95) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0024` | [`gpio_o_6`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L96) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0028` | [`gpio_o_7`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L97) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_002C` | [`gpio_t_0`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L98) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0030` | [`gpio_t_1`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L99) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0034` | [`gpio_t_2`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L100) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0038` | [`gpio_t_3`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L101) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_003C` | [`gpio_t_4`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L102) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0040` | [`gpio_t_5`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L103) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0044` | [`gpio_t_6`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L104) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0048` | [`gpio_t_7`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L105) | RW | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0080` | [`hsb_ver`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L107) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0084` | [`hsb_date`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L108) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0088` | [`hsb_stat`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L109) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_008C` | [`gpio_i_0`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L110) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0090` | [`gpio_i_1`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L111) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0094` | [`gpio_i_2`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L112) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0098` | [`gpio_i_3`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L113) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_009C` | [`gpio_i_4`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L114) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_00A0` | [`gpio_i_5`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L115) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_00A4` | [`gpio_i_6`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L116) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_00A8` | [`gpio_i_7`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L117) | RO | [Global Register](../modules/boot_and_reset.md#glb_ctrl_top) |  |
+| `0x0000_0100` | [`ptp_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L126) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0104` | [`ptp_ctrl`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L127) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0108` | [`ptp_ctrl_profile`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L128) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_010C` | [`ptp_ctrl_dly`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L129) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0110` | [`ptp_ctrl_dpll_cfg1`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L130) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0114` | [`ptp_ctrl_dpll_cfg2`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L131) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0118` | [`ptp_ctrl_avg_fact`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L132) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_011C` | [`ptp_ctrl_domain`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L133) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0120` | [`ptp_ctrl_pcp`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L134) | RW | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0180` | [`ptp_sync_ts_0`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L136) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0184` | [`ptp_sync_cf_0`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L137) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0188` | [`ptp_sync_stat`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L138) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_018C` | [`ptp_ofm`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L139) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0190` | [`ptp_mean_dly`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L140) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0194` | [`ptp_inc`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L141) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0198` | [`ptp_fa_adj`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L142) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_019C` | [`ptp_dly_cf_0`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L143) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_01A0` | [`ptp_ip_dly_asymm`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L144) | RO | [PTP Register](../modules/ptp.md#暫存器) |  |
+| `0x0000_0200` | [`ctrl_evt_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L212) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0204` | [`ctrl_evt_rising`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L213) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0208` | [`ctrl_evt_falling`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L214) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_020C` | [`ctrl_evt_clear`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L215) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0210` | [`ctrl_evt_host_mac_addr_lo`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L216) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0214` | [`ctrl_evt_host_mac_addr_hi`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L217) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0218` | [`ctrl_evt_host_ip_addr`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L218) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_021C` | [`ctrl_evt_host_udp_port`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L219) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0220` | [`ctrl_evt_dev_udp_port`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L220) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0224` | [`ctrl_evt_apb_interrupt_en`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L221) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0228` | [`ctrl_evt_apb_timeout`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L222) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_022C` | [`ctrl_evt_sw_event`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L223) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0230` | [`ctrl_evt_vlan`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L224) | RW | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0280` | [`ctrl_evt_stat`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L226) | RO | [Control Bus Event](../modules/event.md#暫存器) |  |
+| `0x0000_0300` | [`ecb_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L196) | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0304` | [`ecb_addr_lsb`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L197) | RW | [ECB](../modules/rx_ls_parser.md#暫存器) | ⚠️ 原始碼註解寫 `0x0008` |
+| `0x0000_0308` | [`ecb_addr_msb`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L198) | RW | [ECB](../modules/rx_ls_parser.md#暫存器) | ⚠️ 原始碼註解寫 `0x0004` |
+| `0x0000_030C` | [`ecb_rkey`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L199) | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0310` | [`ecb_pkey`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L200) | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0314` | [`ecb_dest_qp`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L201) | RW | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
+| `0x0000_0380` | [`ecb_stat`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L203) | RO | [ECB](../modules/rx_ls_parser.md#暫存器) |  |
 | `0x0000_1000` | `DP_QP` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [23:0] dest QP（CoE：[5:0] channel）、[24] 1722B、[31:25] line 長度 log2 |
 | `0x0000_1004` | `DP_RKEY` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | RETH R_Key |
 | `0x0000_1008` | `DP_PAGE_LSB` | RW | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | [31:7] buffer 起點（page） |
@@ -121,19 +122,19 @@
 | `0x0000_103C` | `PSN` | RW* | [Data Plane 設定 RAM（APB RAM 0）](../modules/dp_pkt_top.md#4-設定-ram) | FSM 回寫目前 PSN |
 | `0x0000_2000` | `程式 / 資料` | RW | [事件序列 RAM（APB RAM 1）](../modules/event.md#2-序列器apb-時脈) | 每個事件一段序列：POLL / WRITE / READ / NOP；READ 結果寫回 RAM |
 | `0x0000_3000` | `QP 資訊` | RW | [RoCE QP RAM（APB RAM 2）](../modules/roce_ack.md) | SIF_TX_ROCE_RC_ENABLE 時使用；只有 host 0 的 RAM 回應讀取 |
-| `0x0100_0000` | `pack_scratch` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
-| `0x0100_0004` | `pack_ram_addr` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
-| `0x0100_0008` | `pack_ram_data` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
-| `0x0100_000C` | `pack_ctrl` | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
-| `0x0100_0080` | `pack_tvalid_cnt` | RO | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
-| `0x0100_0084` | `pack_psn_cnt` | RO | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
-| `0x0100_0100` | `sen_rx_data_gen_scratch` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
-| `0x0100_0104` | `sen_rx_data_gen_ena` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
-| `0x0100_0108` | `sen_rx_data_gen_mode` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
-| `0x0100_010C` | `sen_rx_data_gen_size` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
-| `0x0100_0110` | `sen_rx_data_gen_output_rate` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
-| `0x0100_0114` | `sen_rx_data_gen_pps_sync` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
-| `0x0100_0124` | `sen_rx_prbs_seed` | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0000` | [`pack_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L252) | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0004` | [`pack_ram_addr`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L253) | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0008` | [`pack_ram_data`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L254) | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_000C` | [`pack_ctrl`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L255) | RW | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0080` | [`pack_tvalid_cnt`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L257) | RO | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0084` | [`pack_psn_cnt`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L258) | RO | [Packetizer Register](../modules/packetizer.md#暫存器) |  |
+| `0x0100_0100` | [`sen_rx_data_gen_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L267) | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0104` | [`sen_rx_data_gen_ena`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L268) | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0108` | [`sen_rx_data_gen_mode`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L269) | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_010C` | [`sen_rx_data_gen_size`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L270) | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0110` | [`sen_rx_data_gen_output_rate`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L271) | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0114` | [`sen_rx_data_gen_pps_sync`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L272) | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
+| `0x0100_0124` | [`sen_rx_prbs_seed`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L273) | RW | [Sensor RX Data Generator](../modules/data_gen.md#暫存器) |  |
 | `0x0120_0000` | `ctrl` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) | [0] 輸出啟用、[1] pause、[2] 程式化門檻、[4] 統計 reset、[8] 除錯清空 |
 | `0x0120_0004` | `sw_almost_full_thresh` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
 | `0x0120_0008` | `sw_almost_empty_thresh` | RW | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
@@ -142,29 +143,29 @@
 | `0x0120_0080` | `high_watermark` | RO | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
 | `0x0120_0084` | `low_watermark` | RO | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) |  |
 | `0x0120_0088` | `status` | RO | [SIF TX（tx_stream_buffer）](../modules/tx_stream_buffer.md#暫存器) | [1] overflow、[0] underflow |
-| `0x0200_0000` | `inst_dec_scratch` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0004` | `inst_dec_ctrl` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0008` | `lpbk_udp_port` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_000C` | `roce_ecb_dest_qp` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0010` | `inst_dec_rsvd_1` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0014` | `inst_dec_rsvd_2` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0018` | `static_hif_qp` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_001C` | `inst_dec_ack_ctrl` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0020` | `ecb_udp_port` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0024` | `stx_udp_port` | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0080` | `inst_dec_stat` | RO | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0084` | `ipv4_chksum_err_cnt` | RO | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
-| `0x0200_0100` | `eth_pkt_scratch` | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
-| `0x0200_0104` | `eth_pkt_ctrl` | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
-| `0x0200_0108` | `eth_pkt_hp_cnt` | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
-| `0x0200_0180` | `eth_pkt_stat` | RO | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
-| `0x0200_0300` | `dp_pkt_scratch` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
-| `0x0200_0304` | `dp_pkt_len` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
-| `0x0200_0308` | `dp_pkt_dev_udp_port` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
-| `0x0200_030C` | `dp_pkt_vip_mask` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
-| `0x0200_0310` | `dp_pkt_crc_xor` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
-| `0x0200_0314` | `dp_pkt_1722B` | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
-| `0x0200_0380` | `dp_pkt_stat` | RO | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0000` | [`inst_dec_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L160) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0004` | [`inst_dec_ctrl`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L161) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0008` | [`lpbk_udp_port`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L162) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_000C` | [`roce_ecb_dest_qp`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L163) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0010` | [`inst_dec_rsvd_1`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L164) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0014` | [`inst_dec_rsvd_2`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L165) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0018` | [`static_hif_qp`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L166) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_001C` | [`inst_dec_ack_ctrl`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L167) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0020` | [`ecb_udp_port`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L168) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0024` | [`stx_udp_port`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L169) | RW | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0080` | [`inst_dec_stat`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L171) | RO | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0084` | [`ipv4_chksum_err_cnt`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L172) | RO | [Instruction Decoder Registers](../modules/rx_parser.md#暫存器) |  |
+| `0x0200_0100` | [`eth_pkt_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L181) | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0104` | [`eth_pkt_ctrl`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L182) | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0108` | [`eth_pkt_hp_cnt`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L183) | RW | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0180` | [`eth_pkt_stat`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L186) | RO | [Ethernet Packet](../modules/eth_pkt.md#暫存器) |  |
+| `0x0200_0300` | [`dp_pkt_scratch`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L235) | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0304` | [`dp_pkt_len`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L236) | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0308` | [`dp_pkt_dev_udp_port`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L237) | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_030C` | [`dp_pkt_vip_mask`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L238) | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0310` | [`dp_pkt_crc_xor`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L239) | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0314` | [`dp_pkt_1722B`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L240) | RW | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
+| `0x0200_0380` | [`dp_pkt_stat`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L242) | RO | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) |  |
 | `0x0300_0000` | `ctrl` | RW | [SPI](../modules/peripherals.md#spi--qspi) | [0] start |
 | `0x0300_0004` | `bus_en` | RW | [SPI](../modules/peripherals.md#spi--qspi) | 選擇匯流排 |
 | `0x0300_0008` | `len` | RW | [SPI](../modules/peripherals.md#spi--qspi) | [15:0] 寫入 / [31:16] 讀取 byte 數 |
@@ -222,3 +223,10 @@
 | `0x8000_0804` | `STAT1` | RO | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) |  |
 | `0x8000_0808` | `STAT2` | RO | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | [0] TX underrun、[1] RX overrun |
 | `0x8000_080C` | `STAT3` | RO | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) |  |
+
+## 註解與程式不一致的項目
+
+| 區塊 | 名稱 | 實際 offset | 註解位址 |
+|---|---|---|---|
+| ECB | [`ecb_addr_lsb`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L197) | `0x0004` | `0x0008` |
+| ECB | [`ecb_addr_msb`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/reg_map/regmap_pkg.sv#L198) | `0x0008` | `0x0004` |

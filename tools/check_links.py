@@ -22,6 +22,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reviewed as reviewed_list  # noqa: E402
+
 SHA = "41cecaa81ab906a55e7ec22e5e6989f7e602a4c8"
 ROOT = Path(__file__).resolve().parent.parent
 LINK = re.compile(r"\]\((https://github\.com/nvidia-holoscan/holoscan-sensor-bridge/blob/"
@@ -103,13 +106,7 @@ def main():
                                        ", ".join(sorted(set(ids)))))
                 elif verbose:
                     print(f"ok   {where} {path}#L{a}: {found[0]}")
-    reviewed = set()
-    rv = ROOT / "tools" / "check_links_reviewed.txt"
-    if rv.exists():
-        for l in rv.read_text().split("\n"):
-            if l.strip() and not l.startswith("#"):
-                doc, cite = l.split()[:2]
-                reviewed.add((doc, cite))
+    reviewed = set(reviewed_list.load("check_links"))
     still = []
     n_rev = 0
     for w, u, ids in mismatched:
@@ -121,7 +118,7 @@ def main():
             still.append((w, u, ids))
     mismatched = still
     print(f"links: {n_links}; judged by identifier: {n_judged} ({n_rev} reviewed by hand, "
-          f"tools/check_links_reviewed.txt); no identifier in the leading text: {n_unjudged}")
+          f"tools/reviewed.txt); no identifier in the leading text: {n_unjudged}")
     for w, u, why in broken:
         print(f"[BROKEN] {w}: {why}\n         {u}")
     for w, u, ids in mismatched:

@@ -168,7 +168,7 @@ sequenceDiagram
 
 ### 6. 計算（`ptp_calc`）
 
-兩個獨立的狀態機（[ptp_calc.sv#L181–L336](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_calc.sv#L181-L336)）：Sync 路徑 `IDLE → TS1 → TS2 → SUB → CF_ADD → CORR → ADD_DLY`，Delay 路徑 `IDLE → TS1 → TS2 → SUB_SM → CF_SM →（P2P：TS3 → TS4 → SUB_MS）→ ADD_SM_MS → ABS → MEAN`。每個時間戳先轉成單一奈秒數 `sec[31:0] × 10^9 + ns[29:0]`（共用一組 DSP 乘法，輸入、乘法、輸出各一級暫存器，每個時間戳佔 5 拍（`sync_timer` 從 0 數到 4 才離開）），再取低 `W_OFM = 24` bit 做差。correctionField 以 `{1'b0, cf[23:0]}` 加入，結果存回 24 bit，所以整個運算是 mod 2²⁴。負的 correctionField 的低 24 bit 就是它的二補數，截斷後的結果仍然正確；只有結果超出 ±2²³ ns（約 ±8.4 ms）時才會回捲（v6 修正：v5 寫成「負值會被當成很大的正數」）。
+兩個獨立的狀態機（[ptp_calc.sv#L181–L336](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_calc.sv#L181-L336)）：Sync 路徑 `IDLE → TS1 → TS2 → SUB → CF_ADD → CORR → ADD_DLY`，Delay 路徑 `IDLE → TS1 → TS2 → SUB_SM → CF_SM →（P2P：TS3 → TS4 → SUB_MS）→ ADD_SM_MS → ABS → MEAN`。每個時間戳先轉成單一奈秒數 `sec[31:0] × 10^9 + ns[29:0]`（共用一組 DSP 乘法，輸入、乘法、輸出各一級暫存器，每個時間戳佔 5 拍（`sync_timer` 從 0 數到 4 才離開）），再取低 `W_OFM = 24` bit 做差。correctionField 以 `{1'b0, cf[23:0]}` 加入，結果存回 24 bit，所以整個運算是 mod 2²⁴。負的 correctionField 的低 24 bit 就是它的二補數，截斷後的結果仍然正確；只有結果超出 ±2²³ ns（約 ±8.4 ms）時才會回捲。
 
 `ptp_calc` 只在首次同步之後才啟動：`i_sync_ld = sync_ld && first_sync_rx_dpll_en`、`i_dly_ld = dly_ld && first_dly_rx_dpll_en`（[`ptp_top.sv#L453`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_top.sv#L453)、[`#L462`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_top.sv#L462)）。
 
@@ -220,7 +220,7 @@ fa = (ofm >>> g1) + Σ (ofm >>> g2)       // g1 = dpll_cfg1[2:0]、g2 = dpll_cfg
 
 ## 暫存器
 
-基底 `0x0000_0100`（[regmap.md](../registers/regmap.md#ptp-register)）。Reset 值取自 [`ptp_top.sv#L194`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_top.sv#L194)。
+基底 `0x0000_0100`（[all-registers.md](../registers/all-registers.md#區塊總覽)）。Reset 值取自 [`ptp_top.sv#L194`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ptp/ptp_top.sv#L194)。
 
 | Offset | 名稱 | Reset | 說明 |
 |---|---|---|---|

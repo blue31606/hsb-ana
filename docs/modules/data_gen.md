@@ -8,7 +8,7 @@
 | `prbs_lfsr_hc` | [`data_gen/prbs_lfsr_hc.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/prbs_lfsr_hc.sv) | 展開的 PRBS-31 LFSR | `data_gen` |
 | `ram_player` | [`data_gen/ram_player.sv`](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/ram_player.sv)（344 行） | 從 APB 寫入的 RAM 重播資料 | 只有 PYNQ RFSoC 板級（`sensor_if_path.sv`） |
 
-分析深度：`data_gen`、`ram_player` 都逐行（`ram_player` 在 v6 補上）。
+分析深度：`data_gen`、`ram_player` 都逐行。
 
 ## `data_gen`
 
@@ -25,7 +25,7 @@
 狀態機 `IDLE → GEN_DATA → DONE`：
 
 1. `data_gen_ena` 上升緣進入 `GEN_DATA`。
-2. 速率控制：`output_div_cnt += output_rate`，bit 16（模擬時 bit 4）每次翻轉（0→1 或 1→0）就輸出一拍，bit 16 每累加 2¹⁶ 翻轉一次，所以輸出速率 ≈ `output_rate / 2^16` 拍/時脈，`output_rate` 接近 `0xFFFF` 時約每拍輸出（v6 修正：v5 寫成 2¹⁷）。
+2. 速率控制：`output_div_cnt += output_rate`，bit 16（模擬時 bit 4）每次翻轉（0→1 或 1→0）就輸出一拍，bit 16 每累加 2¹⁶ 翻轉一次，所以輸出速率 ≈ `output_rate / 2^16` 拍/時脈，`output_rate` 接近 `0xFFFF` 時約每拍輸出。
 3. 非連續模式：累計輸出 `data_gen_size` byte 後送 `tlast`，回到 `IDLE`。連續模式（`ena[1]`）：持續輸出直到 `data_gen_ena` 清 0。
 4. 資料：
    - PRBS（`mode = 0`）：16-bit PRBS（seed 取 `prbs_seed[30:0]`），整個匯流排由同一個值加上段落 index 組成（`prbs + k`）。

@@ -95,7 +95,7 @@ addr = 0xFFFF_FFFF 表示序列結束
 | `01` | WRITE | addr, data | APB 寫 |
 | `10` | READ | addr, (空位) | APB 讀，結果**寫回 RAM** 的空位，host 之後用 ECB 讀 |
 | `00` | POLL | addr, value, mask | APB 讀，重複直到 `(rd & mask) == value` |
-| `11` | 名為 NOP | addr | **不是空操作**：`OPCODE_NOP` 有定義但狀態機沒有判斷它。opcode bit 1 為 1，所以和 READ 一樣不前進 RAM 位址，`pwdata` 與 `val_mask` 都載入 addr 這個字本身；接著對 addr 做 APB 讀，進 `APB_COMPARE`，重複直到 `(rd & addr) == addr`（[ctrl_bus_evt_fsm.sv#L304–L360](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ctrl_bus_evt/ctrl_bus_evt_fsm.sv#L304-L360)；R，v6 稽核發現） |
+| `11` | 名為 NOP | addr | **不是空操作**：`OPCODE_NOP` 有定義但狀態機沒有判斷它。opcode bit 1 為 1，所以和 READ 一樣不前進 RAM 位址，`pwdata` 與 `val_mask` 都載入 addr 這個字本身；接著對 addr 做 APB 讀，進 `APB_COMPARE`，重複直到 `(rd & addr) == addr`（[ctrl_bus_evt_fsm.sv#L304–L360](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/ctrl_bus_evt/ctrl_bus_evt_fsm.sv#L304-L360)；R） |
 
 POLL 每次重讀之間有一段由計數器 `cnt` 決定的間隔。
 
@@ -107,7 +107,7 @@ POLL 每次重讀之間有一段由計數器 `cnt` 決定的間隔。
 
 ## 暫存器
 
-基底 `0x0000_0200`（[regmap.md](../registers/regmap.md#control-bus-event)）：
+基底 `0x0000_0200`（[all-registers.md](../registers/all-registers.md#區塊總覽)）：
 
 | Offset | 名稱 | 說明 |
 |---|---|---|

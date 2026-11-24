@@ -2,7 +2,9 @@
 """Generate docs/registers/all-registers.md: every APB-visible register of HSB
 with its absolute address (instance 0), in one table.
 
-Registers listed in regmap_pkg.sv are parsed with gen_regmap.parse(). Blocks
+Registers listed in regmap_pkg.sv are parsed here (offset = index * 4); the
+address written in each source comment is compared with it and mismatches are
+listed at the end of the document. Blocks
 that are not in regmap_pkg.sv (module-local registers, RAMs, peripherals,
 reference-design modules) are listed in EXTRA below; their contents were taken
 from the RTL by hand and are documented in the linked module documents.
@@ -10,11 +12,59 @@ from the RTL by hand and are documented in the linked module documents.
 Usage:
   python3 tools/gen_allregs.py <path-to-holoscan-sensor-bridge> > docs/registers/all-registers.md
 """
+import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import gen_regmap  # noqa: E402
+COMMIT = "41cecaa81ab906a55e7ec22e5e6989f7e602a4c8"
+SRC = "fpga/nv_hsb_ip/reg_map/regmap_pkg.sv"
+URL = f"https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/{COMMIT}/{SRC}"
+
+# section title in regmap_pkg.sv -> (base address text, instance stride text, RTL module, evidence)
+# Base addresses are not in regmap_pkg.sv: they come from the apb_switch settings in
+# apb_intc_top.sv; the evidence column names the host constant or RTL setting checked.
+BASES = {
+    "Global Register": ("0x0000_0000", "-", "glb_ctrl_top", "HSB_IP_VERSION = 0x80"),
+    "PTP Register": ("0x0000_0100", "-", "ptp_top", "FPGA_PTP_CTRL = 0x104"),
+    "Control Bus Event": ("0x0000_0200", "-", "ctrl_bus_evt_int", "CTRL_EVENT = 0x0000'0200"),
+    "ECB": ("0x0000_0300", "-", "ecb_rdwr_ctrl", "apb_intc_top u_apb_switch_glb port 3"),
+    "Instruction Decoder Registers": ("0x0200_0000", "0x1_0000 / host", "rx_parser", "apb_intc_top host level"),
+    "Ethernet Packet": ("0x0200_0100", "0x1_0000 / host", "eth_pkt", "apb_intc_top host level"),
+    "Dataplane Packetizer": ("0x0200_0300", "0x1_0000 / host", "dp_pkt_top", "apb_intc_top host level"),
+    "Packetizer Register": ("0x0100_0000", "0x1_0000 / SIF RX", "packetizer_top", "enumerator.cpp sif_address"),
+    "Sensor RX Data Generator": ("0x0100_0100", "0x1_0000 / SIF RX", "data_gen", "apb_intc_top sensor level"),
+}
+
+SECTION_RE = re.compile(r"^//-+//\s*$")
+TITLE_RE = re.compile(r"^//\s*(\S.*?)\s*$")
+PARAM_RE = re.compile(r"localparam\s+(\w+)\s*=\s*(\d+)\s*;\s*(?://\s*(.*))?$")
+ADDR_RE = re.compile(r"0x([0-9A-Fa-f_]+)")
+
+
+def parse(text):
+    lines = text.splitlines()
+    sections, cur = [], None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if SECTION_RE.match(s) and i + 2 < len(lines) and SECTION_RE.match(lines[i + 2].strip()):
+            m = TITLE_RE.match(lines[i + 1].strip())
+            if m:
+                cur = {"title": m.group(1), "line": i + 2, "regs": [], "n": {}}
+                sections.append(cur)
+            continue
+        if cur is None:
+            continue
+        m = PARAM_RE.search(s)
+        if not m:
+            continue
+        name, val, comment = m.group(1), int(m.group(2)), (m.group(3) or "")
+        if name.endswith("_nctrl") or name.endswith("_nstat"):
+            cur["n"][name[-5:]] = val
+            continue
+        cur["regs"].append((name, val, comment, i + 1))
+    return [s for s in sections if s["title"] in BASES]
+
+
 
 DOC = {
     "Global Register": ("../modules/boot_and_reset.md#glb_ctrl_top", "1"),
@@ -151,7 +201,7 @@ def fmt(a):
 
 
 def main(root):
-    text = (Path(root) / gen_regmap.SRC).read_text(encoding="utf-8")
+    text = (Path(root) / SRC).read_text(encoding="utf-8")
     out = [
         "# 完整暫存器索引（自動產生）",
         "",
@@ -159,19 +209,28 @@ def main(root):
         "",
         "所有 APB 可存取的暫存器依絕對位址排列（多實例的區塊列實例 0 的位址）。",
         "",
-        "- 位元細節請點各區塊的文件連結；`regmap_pkg.sv` 內的暫存器另見 [regmap.md](regmap.md)（含原始碼註解比對）。",
+        "- 位元細節請點各區塊的文件連結。`regmap_pkg.sv` 內的暫存器名稱連到原始碼那一行；位址 = 基底 + index × 4，"
+        "index ≥ 32 是狀態暫存器（`stat_ofst = 32`）；原始碼註解寫的位址不同時標 ⚠️。",
+        "- 基底位址取自 `apb_intc_top.sv` 的 `apb_switch` 設定，host 的位址常數由 `tools/check_host_regs.py` 逐一比對。",
         "- 類型：RW = 控制暫存器；RO = 狀態暫存器（`s_apb_reg` 的 index ≥ 32）；RW* = RTL 也會寫入；W = 只寫。",
         "- 未定義位址讀回 `0xBADADD12`（[apb.md](../modules/apb.md#watchdog)）。",
         "",
     ]
     blocks = []
-    for sec in gen_regmap.parse(text):
-        base_txt, stride, module, _ = gen_regmap.BASES[sec["title"]]
+    mismatches = []
+    for sec in parse(text):
+        base_txt, stride, module, _ = BASES[sec["title"]]
         base = int(base_txt.replace("_", ""), 16)
         doc, count = DOC[sec["title"]]
-        regs = [(idx * 4, name, "RO" if idx >= 32 else "RW", comment.split("//")[0])
-                for name, idx, comment, _ in sec["regs"]]
-        regs = [(o, n, k, gen_regmap.ADDR_RE.sub("", c).strip(" /")) for o, n, k, c in regs]
+        regs = []
+        for name, idx, comment, line in sec["regs"]:
+            desc = ADDR_RE.sub("", comment.split("//")[0]).strip(" /")
+            m = ADDR_RE.search(comment)
+            if m and int(m.group(1).replace("_", ""), 16) != idx * 4:
+                cval = int(m.group(1).replace("_", ""), 16)
+                desc = (desc + "；" if desc else "") + f"⚠️ 原始碼註解寫 `0x{cval:04X}`"
+                mismatches.append((sec["title"], name, idx * 4, cval, line))
+            regs.append((idx * 4, f"[`{name}`]({URL}#L{line})", "RO" if idx >= 32 else "RW", desc))
         stride_txt = stride if count == "1" else f"{stride}（{count} 個）"
         blocks.append((sec["title"], base, stride_txt, module, doc, regs))
     blocks += EXTRA
@@ -185,7 +244,16 @@ def main(root):
     out += ["## 全部暫存器", "", "| 位址 | 名稱 | 類型 | 區塊 | 說明 |", "|---|---|---|---|---|"]
     for title, base, _, _, doc, regs in blocks:
         for off, name, kind, desc in regs:
-            out.append(f"| `{fmt(base + off)}` | `{name}` | {kind} | [{title}]({doc}) | {desc} |")
+            shown = name if name.startswith("[") else f"`{name}`"
+            out.append(f"| `{fmt(base + off)}` | {shown} | {kind} | [{title}]({doc}) | {desc} |")
+    out.append("")
+    out += ["## 註解與程式不一致的項目", ""]
+    if mismatches:
+        out += ["| 區塊 | 名稱 | 實際 offset | 註解位址 |", "|---|---|---|---|"]
+        for t, n, off, c, line in mismatches:
+            out.append(f"| {t} | [`{n}`]({URL}#L{line}) | `0x{off:04X}` | `0x{c:04X}` |")
+    else:
+        out.append("沒有。")
     out.append("")
     sys.stdout.write("\n".join(out))
 

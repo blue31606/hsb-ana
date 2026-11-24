@@ -10,7 +10,7 @@ For every file under fpga/nv_hsb_ip (simple_tb excluded):
 The first register of a crossing is accepted silently when its name looks like a synchronizer
 stage (`*_sync*`, `*_meta*`, `*_ff1`, `*_d1`, `*_r1`, `*_cdc*`), or when the source signal is
 only a quasi-static setting (named `*cfg*`, `*ctrl*`, `*reg*`, `*mode*`, `*en`). Everything else
-is printed for reading by hand, unless tools/scan_cdc_reviewed.txt lists "<file> <signal>".
+is printed for reading by hand, unless tools/reviewed.txt lists "scan_cdc <file> <signal>".
 
 Limits: crossings between modules (through ports) are not traced; clocks with different names
 that are the same net (or SYNC_CLK = 1 builds) are reported as crossings; generate-for
@@ -23,6 +23,9 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reviewed as reviewed_list  # noqa: E402
 
 SYNC_NAME = re.compile(r"(sync|meta|_ff1|_d1\b|_r1\b|cdc|_s1\b|_dly)", re.I)
 STATIC = re.compile(r"(cfg|ctrl_reg|ctrl\b|_reg\b|mode|_en\b|enable|param|config)", re.I)
@@ -119,12 +122,7 @@ def main():
         return 2
     ip = Path(sys.argv[1]) / "fpga" / "nv_hsb_ip"
     show_all = "--all" in sys.argv
-    reviewed = set()
-    rv = Path(__file__).with_name("scan_cdc_reviewed.txt")
-    if rv.exists():
-        for ln in rv.read_text().splitlines():
-            if ln.strip() and not ln.startswith("#"):
-                reviewed.add(tuple(ln.split(" -- ")[0].split()[:2]))
+    reviewed = set(reviewed_list.load("scan_cdc"))
     n_rev = 0
     files = sorted(f for f in list(ip.rglob("*.sv")) + list(ip.rglob("*.v")) if "simple_tb" not in str(f))
     n_multi = n_cross = n_acc = 0
@@ -143,10 +141,10 @@ def main():
                 report.append(f"  {tag}{f.relative_to(ip)}:{line}  @{clk} reads `{x}` ({', '.join(other)}) -> "
                               f"{', '.join(l[:3])}{' ...' if len(l) > 3 else ''}")
     print(f"files: {len(files)}; files with crossings inside: {n_multi}; crossings: {n_cross}; "
-          f"accepted by name: {n_acc}; reviewed by hand: {n_rev} (tools/scan_cdc_reviewed.txt); "
+          f"accepted by name: {n_acc}; reviewed by hand: {n_rev} (tools/reviewed.txt); "
           f"not reviewed: {n_cross - n_acc - n_rev}")
     print("\n".join(report))
-    return 0
+    return 1 if n_cross - n_acc - n_rev else 0
 
 
 if __name__ == "__main__":
