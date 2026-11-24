@@ -4,7 +4,16 @@
 // written. Each test is a task meant to be `include`d inside module
 // nv_hsb_ip_simple_tb (after the tb_lib includes) and called from the main
 // initial block after hololink_init(). Hierarchical names refer to commit
-// 41cecaa81ab906a55e7ec22e5e6989f7e602a4c8 and must be re-checked.
+// 41cecaa81ab906a55e7ec22e5e6989f7e602a4c8.
+//
+// v7: every testbench task / constant, task argument count and hierarchical
+// path used below has been checked against that commit with
+// tools/check_tests.py (not a compile: syntax and timing are still unchecked).
+// Defines needed in HOLOLINK_def.svh, per test:
+//   T4 packetizer_latency  SENSOR_RX_IF_INST
+//   T6 roce_dup_ack        SIF_TX_ROCE_RC_ENABLE, SENSOR_TX_IF_INST
+//   T7 eeprom_crc          ENUM_EEPROM
+//   T8-T13 (v7)            see each test's header
 //
 // Every test prints "DIRECTED <name>: PASS|FAIL" and returns pass = 1 when the
 // RTL behaves as the specification says. With the RTL at 41cecaa, the tests
@@ -173,8 +182,10 @@ task automatic dt_vlan_ptp_type(output bit pass);
 endtask
 
 // ---------------------------------------------------------------------------
-// T6 (TX-1): duplicate RC packet must be ACKed (needs +define+ENABLE_ROCE_ACK
-// and TEST_MODE=HOST2SEN). Sends PSN p, then PSN p again, then counts ACKs.
+// T6 (TX-1): duplicate RC packet must be ACKed. Needs `define SIF_TX_ROCE_RC_ENABLE
+// in HOLOLINK_def.svh (that is what sets rx_parser.ENABLE_ROCE_ACK = 1; there is
+// no ENABLE_ROCE_ACK define) and TEST_MODE=HOST2SEN. Sends PSN p, then PSN p
+// again, then counts ACKs.
 // Expected FAIL at 41cecaa: only the first packet is ACKed.
 // ---------------------------------------------------------------------------
 int dt_ack_count;
@@ -228,4 +239,279 @@ task automatic dt_eeprom_crc(output bit pass);
     pass = (u_dut.u_eeprom_info.eeprom_crc_err == 1'b0);
     $display("  eeprom_crc_err = %0b (expect 0)", u_dut.u_eeprom_info.eeprom_crc_err);
     dt_report("eeprom_crc", pass);
+endtask
+
+// ===========================================================================
+// v7 additions: T8-T12. Same conventions as above. Checked with
+// tools/check_tests.py against 41cecaa; not compiled.
+// ===========================================================================
+
+`ifdef SENSOR_TX_IF_INST
+// ---------------------------------------------------------------------------
+// Sensor-TX egress capture shared by T8-T10. Records every egress byte and the
+// byte length of every tlast-delimited egress packet, per sensor.
+// ---------------------------------------------------------------------------
+logic [7:0] dt_egress     [`SENSOR_TX_IF_INST][$];
+int         dt_egress_len [`SENSOR_TX_IF_INST][$];
+int         dt_egress_cur [`SENSOR_TX_IF_INST];
+
+for (genvar gs = 0; gs < `SENSOR_TX_IF_INST; gs++) begin : g_dt_egress
+    initial dt_egress_cur[gs] = 0;
+    always @(posedge i_sif_tx_clk[gs]) begin
+        if (o_sif_axis_tvalid[gs] && i_sif_axis_tready[gs]) begin
+            for (int lane = 0; lane < `DATAKEEP_WIDTH; lane++)
+                if (o_sif_axis_tkeep[gs][lane]) begin
+                    dt_egress[gs].push_back(o_sif_axis_tdata[gs][lane*8 +: 8]);
+                    dt_egress_cur[gs]++;
+                end
+            if (o_sif_axis_tlast[gs]) begin
+                dt_egress_len[gs].push_back(dt_egress_cur[gs]);
+                dt_egress_cur[gs] = 0;
+            end
+        end
+    end
+end
+
+task automatic dt_egress_clear(input int s);
+    dt_egress[s].delete();
+    dt_egress_len[s].delete();
+    dt_egress_cur[s] = 0;
+endtask
+
+// ---------------------------------------------------------------------------
+// T8 (TX-6): RC RDMA WRITE ONLY must deliver only the payload, not the RETH.
+// Needs SIF_TX_ROCE_RC_ENABLE and SENSOR_TX_IF_INST. Uses PSN 0, so run it
+// on a sensor whose QP has not carried RC traffic since reset (before T6, or
+// on another sensor).
+// Expected FAIL at 41cecaa: sensor_tx_pkt_proc strips a fixed 54 + 4 bytes, so
+// the 16-byte RETH (E0..E7, DEADBEEF, length) reaches the sensor first.
+// ---------------------------------------------------------------------------
+task automatic dt_rc_write_reth(input int s, output bit pass);
+    logic [7:0] pl[], f[];
+    int size;
+    const logic [7:0] RC_RDMA_WRITE_ONLY = 8'h0A;
+    const int         DATA_BYTES = 1024;       // >= the AFULL gate program_tx_strm_buff() sets
+    program_tx_strm_buff();
+    dt_egress_clear(s);
+    pl = new[16 + DATA_BYTES];
+    for (int i = 0; i < 8; i++) pl[i] = 8'hE0 + 8'(i);           // RETH VA
+    {pl[8], pl[9], pl[10], pl[11]}  = 32'hDEAD_BEEF;              // RETH R_Key
+    {pl[12], pl[13], pl[14], pl[15]} = 32'(DATA_BYTES);           // RETH DMA length
+    for (int i = 0; i < DATA_BYTES; i++) pl[16 + i] = 8'(i);      // 00 01 02 ...
+    build_host2sen_send_frame(s, pl, pl.size(), RC_RDMA_WRITE_ONLY, 24'h0, f, size);
+    send_eth_packet(0, f, size);
+    repeat (20_000) @(posedge hif_clk);
+    pass = (dt_egress[s].size() == DATA_BYTES) &&
+           (dt_egress[s].size() >= 2) && (dt_egress[s][0] == 8'h00) && (dt_egress[s][1] == 8'h01);
+    $display("  sensor %0d egress %0d bytes (expect %0d), first bytes %02x %02x (expect 00 01)",
+             s, dt_egress[s].size(), DATA_BYTES,
+             (dt_egress[s].size() > 0) ? dt_egress[s][0] : 8'hxx,
+             (dt_egress[s].size() > 1) ? dt_egress[s][1] : 8'hxx);
+    dt_report("rc_write_reth", pass);
+endtask
+
+// ---------------------------------------------------------------------------
+// T9 (TX-7): when tx_stream_buffer overflows, every egress packet must still
+// be exactly one ingress packet (whole packets dropped, never cut or merged).
+// PAUSE is disabled and the sensor stops accepting, so the buffer is forced
+// to overflow; that loss itself is expected. Each ingress packet is filled
+// with its own index so a cut or a merge is visible. Two more packets are
+// sent after the drain so a packet that lost its tlast gets merged into them.
+// Needs SENSOR_TX_IF_INST.
+// Expected FAIL at 41cecaa: beats (and tlast) are dropped individually.
+// ---------------------------------------------------------------------------
+task automatic dt_stx_overflow_boundary(input int s, output bit pass);
+    logic [7:0] pl[], f[];
+    int size, entry_bytes, depth, npkts, bad, idx;
+    const int PKT_BYTES = 1000;                                   // not a multiple of any entry size
+    entry_bytes = ((`HOST_WIDTH > SIF_TX_WIDTH[s]) ? `HOST_WIDTH : SIF_TX_WIDTH[s]) / 8;
+    depth       = SIF_TX_BUF_SIZE[s];
+    npkts       = (3 * depth * entry_bytes) / (2 * PKT_BYTES) + 2; // about 1.5x the buffer
+    ecb_write(reg_tx_strm_buff(s, TX_STRM_OFF_PAUSE_MAP), 32'h0);
+    ecb_write(reg_tx_strm_buff(s, TX_STRM_OFF_AFULL),     32'h1);
+    ecb_write(reg_tx_strm_buff(s, TX_STRM_OFF_AEMPTY),    32'h1);
+    ecb_write(reg_tx_strm_buff(s, TX_STRM_OFF_CTRL),      32'h0);  // reset afull_seen
+    ecb_write(reg_tx_strm_buff(s, TX_STRM_OFF_CTRL),      32'h5);  // enable + latch, no pause
+    ecb_write(reg_tx_strm_buff(s, TX_STRM_OFF_CTRL),      32'h1);  // enable, no pause
+    dt_egress_clear(s);
+    i_sif_axis_tready[s] = 1'b0;                                   // sensor stops accepting
+    for (int p = 0; p < npkts + 2; p++) begin
+        if (p == npkts) begin                                      // drain, then two more
+            repeat (2000) @(posedge hif_clk);
+            i_sif_axis_tready[s] = 1'b1;
+            repeat (depth * 16 + 20_000) @(posedge hif_clk);
+        end
+        pl = new[PKT_BYTES];
+        foreach (pl[i]) pl[i] = 8'(p);
+        build_host2sen_send_frame(s, pl, PKT_BYTES, ROCE_OP_SEND_ONLY,
+                                  host2sen_psn[s][23:0], f, size);
+        host2sen_psn[s]++;
+        send_eth_packet(0, f, size);
+    end
+    repeat (depth * 16 + 20_000) @(posedge hif_clk);
+    bad = 0;
+    idx = 0;
+    foreach (dt_egress_len[s][k]) begin
+        bit uniform = 1;
+        for (int b = 1; b < dt_egress_len[s][k]; b++)
+            if (dt_egress[s][idx + b] != dt_egress[s][idx]) uniform = 0;
+        if (dt_egress_len[s][k] != PKT_BYTES || !uniform) begin
+            bad++;
+            $display("  egress packet %0d: %0d bytes, first index %0d, uniform %0b",
+                     k, dt_egress_len[s][k], dt_egress[s][idx], uniform);
+        end
+        idx += dt_egress_len[s][k];
+    end
+    pass = (bad == 0) && (dt_egress_len[s].size() > 0);
+    $display("  sent %0d x %0d B, egress packets %0d, cut or merged %0d (expect 0)",
+             npkts + 2, PKT_BYTES, dt_egress_len[s].size(), bad);
+    program_tx_strm_buff();                                        // restore the normal setup
+    dt_report("stx_overflow_boundary", pass);
+endtask
+
+// ---------------------------------------------------------------------------
+// T10 (TX-8): a PAUSE requested by sensor 1 must carry sensor 1's quanta.
+// Sensor 0 quanta = 0x1111 (pause disabled), sensor 1 quanta = 0x2222 with a
+// 1-entry AFULL and its egress stalled, so only sensor 1 requests a PAUSE.
+// The quanta is sampled at pause_gen's input when the request rises.
+// Needs SENSOR_TX_IF_INST >= 2 (skipped otherwise).
+// Expected FAIL at 41cecaa: every pause_gen reads tx_pause_quanta[0].
+// ---------------------------------------------------------------------------
+logic [15:0] dt_pause_time_q[$];
+logic        dt_pause_req_q = 1'b0;
+always @(posedge hif_clk) begin
+    dt_pause_req_q <= u_dut.host_pause_req[0];
+    if (u_dut.host_pause_req[0] && !dt_pause_req_q)
+        dt_pause_time_q.push_back(u_dut.gen_pause[0].u_pause_gen.i_pause_time);
+end
+
+task automatic dt_pause_quanta(output bit pass);
+    logic [7:0] pl[], f[];
+    int size;
+    if (`SENSOR_TX_IF_INST < 2) begin
+        $display("  skipped: needs at least 2 sensor TX interfaces");
+        pass = 1;
+        dt_report("pause_quanta", pass);
+        return;
+    end
+    ecb_write(reg_tx_strm_buff(0, TX_STRM_OFF_QUANTA),    32'h0000_1111);
+    ecb_write(reg_tx_strm_buff(0, TX_STRM_OFF_CTRL),      32'h1);  // sensor 0: no pause
+    ecb_write(reg_tx_strm_buff(1, TX_STRM_OFF_PAUSE_MAP), 32'h1);
+    ecb_write(reg_tx_strm_buff(1, TX_STRM_OFF_AFULL),     32'h1);
+    ecb_write(reg_tx_strm_buff(1, TX_STRM_OFF_AEMPTY),    32'h0);
+    ecb_write(reg_tx_strm_buff(1, TX_STRM_OFF_QUANTA),    32'h0000_2222);
+    ecb_write(reg_tx_strm_buff(1, TX_STRM_OFF_CTRL),      32'h0);
+    ecb_write(reg_tx_strm_buff(1, TX_STRM_OFF_CTRL),      32'h7);  // enable + pause + latch
+    ecb_write(reg_tx_strm_buff(1, TX_STRM_OFF_CTRL),      32'h3);
+    i_sif_axis_tready[1] = 1'b0;
+    dt_pause_time_q.delete();
+    pl = new[512];
+    foreach (pl[i]) pl[i] = 8'(i);
+    build_host2sen_send_frame(1, pl, 512, ROCE_OP_SEND_ONLY, host2sen_psn[1][23:0], f, size);
+    host2sen_psn[1]++;
+    send_eth_packet(0, f, size);
+    repeat (5000) @(posedge hif_clk);
+    pass = (dt_pause_time_q.size() > 0) && (dt_pause_time_q[0] == 16'h2222);
+    $display("  PAUSE requests %0d, first quanta 0x%04x (expect 0x2222)",
+             dt_pause_time_q.size(), (dt_pause_time_q.size() > 0) ? dt_pause_time_q[0] : 16'hxxxx);
+    i_sif_axis_tready[1] = 1'b1;
+    repeat (5000) @(posedge hif_clk);
+    program_tx_strm_buff();
+    dt_report("pause_quanta", pass);
+endtask
+`endif // SENSOR_TX_IF_INST
+
+// ---------------------------------------------------------------------------
+// T11 (DP-1, DP-2): after a burst that overflows rx_parser's buffers, the
+// parser must return to a consistent state once traffic stops.
+// Drives back-to-back 60-byte frames, one beat after another with no idle
+// cycle, to a foreign unicast MAC (classified is_btx and discarded outside
+// Bridge mode). rx_parser reads out n + 1 cycles per n-beat packet, so any
+// gap-free burst outruns it; on Terasic S10 the MAC itself delivers 60-byte
+// frames every 1.5 cycles at 100G, which is the same situation (DP-15).
+// Checks, after the burst has drained:
+//   - u_axis_inp_buffer.in_pkt_cnt == out_pkt_cnt
+//   - three ECB reads of glb_scratch all return the marker written before.
+// Expected FAIL at 41cecaa: dropped tlast / metadata leave the counters
+// apart and pair later packets with the wrong metadata until reset. Run it
+// last, or reset afterwards.
+// ---------------------------------------------------------------------------
+task automatic dt_rx_parser_burst(input int nframes, output bit pass);
+    logic [7:0]  f[60];
+    logic [31:0] rd, in_cnt, out_cnt;
+    int          beats, ok_reads;
+    const logic [31:0] marker = 32'h5EED_0001;
+    ecb_write(DT_GLB_SCRATCH, marker);
+    foreach (f[i]) f[i] = 8'h00;
+    {f[0], f[1], f[2], f[3], f[4], f[5]}   = 48'h02_00_00_00_00_01;  // not the FPGA
+    {f[6], f[7], f[8], f[9], f[10], f[11]} = TB_HOST_MAC;
+    {f[12], f[13]} = 16'h88B5;                                       // local experimental EtherType
+    beats = (60 + (`HOST_WIDTH/8) - 1) / (`HOST_WIDTH/8);
+    hif_tx_sem.get(1);
+    @(posedge hif_clk);
+    for (int p = 0; p < nframes; p++) begin
+        f[14] = 8'(p);
+        for (int w = 0; w < beats; w++) begin
+            logic [`HOST_WIDTH-1:0]     d = '0;
+            logic [`HOSTKEEP_WIDTH-1:0] k = '0;
+            for (int j = 0; j < (`HOST_WIDTH/8); j++)
+                if (w * (`HOST_WIDTH/8) + j < 60) begin
+                    d[j*8 +: 8] = f[w * (`HOST_WIDTH/8) + j];
+                    k[j]        = 1'b1;
+                end
+            i_hif_axis_tvalid[0] <= 1'b1;
+            i_hif_axis_tdata[0]  <= d;
+            i_hif_axis_tkeep[0]  <= k;
+            i_hif_axis_tlast[0]  <= (w == beats - 1);
+            i_hif_axis_tuser[0]  <= '0;
+            @(posedge hif_clk);
+        end
+    end
+    i_hif_axis_tvalid[0] <= 1'b0;
+    i_hif_axis_tlast[0]  <= 1'b0;
+    hif_tx_sem.put(1);
+    repeat (5000) @(posedge hif_clk);
+    in_cnt  = 32'(u_dut.gen_rx_parser[0].rx_parser.u_axis_inp_buffer.in_pkt_cnt);
+    out_cnt = 32'(u_dut.gen_rx_parser[0].rx_parser.u_axis_inp_buffer.out_pkt_cnt);
+    ok_reads = 0;
+    for (int r = 0; r < 3; r++) begin
+        rd = 32'hX;
+        ecb_read(DT_GLB_SCRATCH, rd);
+        if (rd === marker) ok_reads++;
+    end
+    pass = (in_cnt == out_cnt) && (ok_reads == 3);
+    $display("  %0d frames x %0d beats: in_pkt_cnt %0d, out_pkt_cnt %0d (expect equal); ECB reads OK %0d / 3",
+             nframes, beats, in_cnt, out_cnt, ok_reads);
+    dt_report("rx_parser_burst", pass);
+endtask
+
+// ---------------------------------------------------------------------------
+// T12 (PE-7): with no EEPROM answering, the MAC must stay at the reset value
+// CA:FE:C0:FF:EE:00. Standalone run: the rest of the testbench addresses the
+// FPGA by DEFAULT_FPGA_MAC and cannot run after this.
+//   initial dt_eeprom_absent_setup();            // at time 0, before reset release
+//   ... then, instead of hololink_init():
+//   dt_eeprom_absent_check(p);
+// Needs ENUM_EEPROM.
+// Expected FAIL at 41cecaa: eeprom_info ignores the NACK and copies I2C data-
+// buffer words that were never written: X in simulation (block RAM power-up
+// content, usually 0, on hardware).
+// ---------------------------------------------------------------------------
+task automatic dt_eeprom_absent_setup();
+    force i_eeprom_model.eeprom_sda_drive = 1'b1;              // never ACK
+endtask
+
+task automatic dt_eeprom_absent_check(output bit pass);
+    fork
+        wait (u_dut.u_eeprom_info.eeprom_dval === 1'b1);
+        begin
+            repeat (20_000_000) @(posedge hif_clk);
+            $display("  eeprom_info did not finish");
+        end
+    join_any
+    disable fork;
+    pass = (u_dut.u_eeprom_info.mac_addr === 48'hCAFE_C0FF_EE00);
+    $display("  mac_addr = %012x (expect cafec0ffee00)", u_dut.u_eeprom_info.mac_addr);
+    release i_eeprom_model.eeprom_sda_drive;
+    dt_report("eeprom_absent", pass);
 endtask

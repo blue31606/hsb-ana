@@ -104,6 +104,11 @@ flowchart LR
 `glb_ctrl_top` 支援 `UUID_VAL` 參數（非 0 時在狀態區多 4 個暫存器放 UUID），但 `HOLOLINK_top` 沒有傳這個參數，所以 UUID 只出現在 BOOTP 封包裡。
 
 ## 注意事項
-1. EEPROM 不存在或沒有回應時，I2C 交易以 NACK 結束，`eeprom_info` 仍照常讀緩衝區並覆寫欄位。MAC 會變成緩衝區中的殘留值（reset 後多半是 0），**不會**保留 `CA:FE:C0:FF:EE:00`（推斷：依 I2C 控制器在 NACK 時不寫入讀取資料的行為推論）。
+1. **EEPROM 不存在或沒有回應時，MAC 變成 I2C 資料緩衝區 RAM 的初始內容。** I2C 控制器在位址 byte 收到 NACK 時直接 `I2C_PERI_NACK → I2C_DONE`（[i2c_ctrl_fsm.sv#L288–L289](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c_ctrl_fsm.sv#L288-L289)），不會進 `I2C_READ`，所以 `rd_data_valid`（[L213](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c_ctrl_fsm.sv#L213)）不會寫入資料緩衝區。`eeprom_info` 只輪詢 `status[0]` busy（[eeprom_info.sv#L206](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L206)），不看 `status[3]` NACK，之後照常讀 `0x0300_0304` / `0x0300_0308` 並覆寫 `mac_addr`（[L388–L402](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L388-L402)）。這兩個 word 只有 I2C 讀取會寫入（`eeprom_info` 自己只寫 word 0 的 EEPROM 位址），而 `dp_ram` 沒有 reset 也沒有初始化：
+   - 冷開機：FPGA block RAM 的上電內容，多數 FPGA 是 0，MAC 變成 `00:00:00:00:00:00`。
+   - 軟體 reset 後再跑一次：host 之前 I2C 讀取留下的資料。
+   - 模擬：`X`。
+
+   無論哪一種，都**不會**保留 reset 值 `CA:FE:C0:FF:EE:00`（R，v7 逐行確認；v6 為推斷）。多塊沒有 EEPROM 的板子會拿到相同的 MAC。
 2. EEPROM CRC 的檢查方式與寫入工具不一致，而且結果沒有被使用（見上）。
 3. 軟體 reset 期間 APB、HIF、PTP、SIF 全部 reset，BOOTP 取得的 IP 也會遺失，host 必須重新 enumeration。

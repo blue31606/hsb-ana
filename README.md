@@ -55,6 +55,8 @@
    - [數值驗證](docs/verification-calcs.md)：`tools/verify/verify_calcs.py` 對 checksum、CRC、排程、版面等可計算結論的獨立比對。
    - [定向測試計畫](docs/test-plan.md)：對應問題清單的測試與 SystemVerilog 草稿（`tests/`）。
    - [驗證狀態](VERIFICATION.md)：每項結論是怎麼確認的，以及各版的修正。
+6. **特定用途**（不屬於中立分析）：
+   - [1722 listener 整合](docs/integration-1722.md)：把 Ethernet → Sensor TX 路徑改成 IEEE 1722 listener 時，HSB 端會碰到的問題、需要改的地方與需要確認的項目。
 
 分析深度：**逐行** = 每個 always / assign 都讀過；**主要邏輯** = FSM、資料格式、暫存器都讀過，輔助邏輯略讀；**介面 / 暫存器層級** = 只讀介面、暫存器與註解。
 
@@ -78,6 +80,8 @@
 | `tools/gen_allregs.py` | 產生完整暫存器索引（`regmap_pkg.sv` + 模組內暫存器、RAM、周邊、參考設計） |
 | `tools/verify/verify_calcs.py` | 照 RTL 重寫可計算的運算（checksum、CRC、排程、版面），與獨立參考實作比對；有任何 FAIL 時結束碼為 1 |
 | `tools/wave.py` | 把 `docs/timing/*.wave.json`（WaveDrom 子集）轉成 SVG。GitHub 不支援 WaveDrom，所以 SVG 也一併 commit |
+| `tools/model/rx_parser_model.py` | v7：`rx_parser` 讀出路徑與 Bridge host RX 緩衝的逐拍模型（照 RTL 逐暫存器重寫），重現 DP-1、DP-2、DP-15、BR-1 並計算各板級的線速餘裕；任何預期不符時結束碼為 1 |
+| `tools/check_tests.py` | v7：靜態核對 `tests/` 草稿用到的埠、參數、testbench 名稱、task 參數個數與階層路徑；不需要 HDL 工具 |
 
 重新產生：
 
@@ -88,6 +92,8 @@ python3 tools/gen_regmap.py ../holoscan-sensor-bridge > docs/registers/regmap.md
 python3 tools/gen_allregs.py ../holoscan-sensor-bridge > docs/registers/all-registers.md
 python3 tools/wave.py docs/timing/*.wave.json
 python3 tools/verify/verify_calcs.py ../holoscan-sensor-bridge
+python3 tools/check_tests.py ../holoscan-sensor-bridge
+python3 tools/model/rx_parser_model.py
 ```
 
 ## 名詞
@@ -113,4 +119,5 @@ python3 tools/verify/verify_calcs.py ../holoscan-sensor-bridge
 | v3 | `932292c` | 改為完整、中立的全 IP 分析：新增 PTP、packetizer、事件、APB、開機、周邊、Bridge、RoCE、共用元件、參考設計、板級、驗證環境等文件；`dp_pkt_top`、`rx_ls_parser` 重寫為主要邏輯深度；移除特定應用的設計提案 |
 | v4 | `ddb130a` | `packetizer`、`dp_pkt_top`、PTP 補到逐行並加時序圖；新增端到端流程、效能分析、完整暫存器索引；周邊狀態機與時脈公式；板級感測器接收路徑；testbench 流程與檢查項目 |
 | v5 | `fc2b904` | 重畫頂層方塊圖並新增跨時脈地圖、控制平面 / Data Plane 全貌；`rx_ls_parser`、`roce_icrc`、`roce_ack`、Bridge、APB、開機與 reset 補到逐行；CDC 元件逐行並逐一檢查使用處 |
-| v6 | 目前版本 | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題；之後補上 `lfsr_hc` 全部寬度的數值驗證、追完稽核留下的 2 項、`delayed_io` 逐行 |
+| v6 | `1981132` | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題；之後補上 `lfsr_hc` 全部寬度的數值驗證、追完稽核留下的 2 項、`delayed_io` 逐行 |
+| v7 | 目前版本 | 推斷項目重新追 RTL：DP-1、DP-2、BR-1、DP-13、TX-7、PE-7 全部升為 R 或 R + M，BR-1 與 `rx_parser` 讀出空檔更正；新增逐拍模型（方法 M）與 DP-15（Terasic S10 在 100G 下連續短封包溢位）；新增測試草稿靜態檢查並修正 S6 的巨集名稱；新增 S8–S12 定向測試（TX-6、TX-7、TX-8、DP-1 / DP-2、PE-7）；新增 1722 listener 整合文件 |

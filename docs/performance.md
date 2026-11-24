@@ -1,6 +1,6 @@
 # 效能分析
 
-本章從 RTL 參數與行為推算 HSB 的頻寬、效率、延遲與緩衝餘裕。**所有數字都是由 RTL 推導的估算，沒有經過模擬或硬體量測**；標「推斷」的項目牽涉多個模組的時序交互，誤差可能較大。資源使用量（LUT、BRAM）需要合成報告，本 repo 沒有，所以不在範圍內。
+本章從 RTL 參數與行為推算 HSB 的頻寬、效率、延遲與緩衝餘裕。**所有數字都沒有經過 HDL 模擬或硬體量測**；標「推斷」的項目牽涉多個模組的時序交互，誤差可能較大。§7（v7 新增）的數字來自照 RTL 逐暫存器重寫的 Python 逐拍模型，可信度介於讀 RTL 與模擬之間。資源使用量（LUT、BRAM）需要合成報告，本 repo 沒有，所以不在範圍內。
 
 ## 1. 介面頻寬
 
@@ -44,7 +44,7 @@ host 預設 MTU 是 1500（見 [flow §注意事項](flow.md#注意事項)）。
 | `commit_arm` → `pkt_commit` | 2 |
 | 合計：從開始準備到 commit | 約 11 |
 
-所以兩個資料封包之間大約有 3 拍空檔，`eth_pkt` 再加 1 拍（Data Plane 每個封包後強制讓出一拍，見 [eth_pkt §1](modules/eth_pkt.md#1-data-plane-間隔)）：
+所以兩個資料封包之間大約有 3 拍空檔（v7 沒有為 `dp_pkt_top` 建模：header FSM、設定 RAM 讀取延遲、`dp_pkt_hdr` 與 header / payload 拼接牽涉太多暫存器，這一節仍是推斷，需要模擬確認），`eth_pkt` 再加 1 拍（Data Plane 每個封包後強制讓出一拍，見 [eth_pkt §1](modules/eth_pkt.md#1-data-plane-間隔)）：
 
 | HIF | MTU | 封包拍數（header + payload + ICRC） | 加上空檔 | HSB 端 payload 速率 | 線速上限 | 瓶頸 |
 |---|---|---|---|---|---|---|
@@ -92,7 +92,7 @@ frame 完成通知（metadata 封包）在最後一個資料封包之後立即�
 |---|---|---|
 | `cam_rcvr` `axis_buffer` | 512 × 80 bit = 5 KB | `NO_BACKPRESSURE`：**資料遺失**，不會反壓到相機 |
 | packetizer → VP FIFO | 1006 × 64 bit ≈ 8 KB（MTU 4096）/ 356 × 64 bit ≈ 2.8 KB（MTU 1500）；`dc_fifo` 實體深度補到 1024 / 512 筆，門檻仍以 1006 / 356 計算 | 7/8 時 `pack_tready = 0`，反壓 SIF RX |
-| `rx_parser` 輸入 FIFO | 2 × MTU | 溢位時 beat 遺失（[rx_parser 注意事項](modules/rx_parser.md#注意事項)） |
+| `rx_parser` 輸入 FIFO | 2 × MTU（512-bit 時 3 × MTU），補到 2 的冪次 | 溢位時 beat 遺失，之後資料與 metadata 永久錯開直到 reset（[rx_parser 注意事項](modules/rx_parser.md#注意事項)、§7） |
 | `tx_stream_buffer` | 4096 × `max(HIF 寬度, SIF_TX_WIDTH)`（`axis_buffer_tx` 的 `CENTER_WIDTH`；CPNX100：4096 × 64 bit = 32 KB） | almost full 時送 802.3x PAUSE 給 host |
 
 **反壓鏈的斷點（推斷）**：在 CPNX100 上，HSB 可以反壓 `cam_rcvr`，但 `cam_rcvr` 不能反壓相機。HSB 停止接收時，5 KB 的緩衝以 10 Gb/s 計算約 4 µs 就滿，之後資料遺失。可能讓 HSB 長時間停止接收的情況：
@@ -102,7 +102,43 @@ frame 完成通知（metadata 封包）在最後一個資料封包之後立即�
 
 相機頻寬必須低於 Ethernet 可用頻寬（§2、§3）並留有餘裕。
 
-## 7. 控制平面
+## 7. `rx_parser` 讀出能力（逐拍模型）
+
+`rx_parser` 是 store-and-forward（[rx_parser §5](modules/rx_parser.md#5-store-and-forward-與讀出)），所有收進來的封包（包括最後被丟棄的）都要從輸入 FIFO 讀出一次。[`tools/model/rx_parser_model.py`](../tools/model/rx_parser_model.py) 把這段邏輯照 RTL 逐暫存器重寫成 Python（`sc_fifo` 的旗標時序、`axis_buffer` 的 `WAIT2SEND` 封包計數與預取、`axis_reg`、三個 metadata FIFO、`hdr_ready` / `buf_axis_tready` / `hdr_rden`），再餵入各板級的線速流量。只有 header 完成的時間點（±1 拍）與 MAC 的送出方式是近似的，這兩者只影響起始延遲，不影響穩態吞吐量。
+
+```sh
+python3 tools/model/rx_parser_model.py      # 約 7 秒；任何預期不符時結束碼為 1
+```
+
+**讀出速率。** 背靠背讀出時，n 拍的封包需要 n + 1 拍（64-bit 的 8、9、24、188 拍與 512-bit 的 1、2、8、24 拍都量到剛好多 1 拍）。v6 寫的「至少 2 拍空檔」是錯的。
+
+**各板級收 60-byte frame 線速時：**
+
+| 板級 | MAC 每幾拍送一個 | 讀出需要 | 結果 |
+|---|---|---|---|
+| CPNX100 / NV MIPI / MPF200（64 bit、156.25 MHz、10G） | 10.5 | 9 | 跟得上；輸入 FIFO 最多 13 筆 |
+| PYNQ RFSoC（512 bit、322.27 MHz、100G） | 2.17 | 2 | 跟得上；最多 4 筆 |
+| **Terasic S10（512 bit、201.42 MHz、100G）** | **1.5** | **2** | **跟不上**：metadata FIFO 與資料 FIFO 都溢位，之後的封包配錯 metadata |
+
+**Terasic S10 在 100G 下連續收到的封包數上限**（超過就溢位，觸發 [DP-1 / DP-2](issues.md#data-plane-與封包處理)）：
+
+| frame 長度 | MAC 每幾拍送一個 | 讀出需要 | 溢位前可連續收 |
+|---|---|---|---|
+| 60 / 64 B | 1.5 | 2 | 108 個 |
+| 128 B | 2.5 | 3 | 174 個 |
+| 256 B | 4.67 | 5 | 456 個 |
+| 512 B | 8.67 | 9 | 834 個 |
+| 1024 B | 16.89 | 17 | 2286 個 |
+| 1500 B | 24.67 | 25 | 720 個 |
+| 2048 B 以上 | ≥ 讀出需要 | | 不會溢位（5000 個內） |
+
+PYNQ 的 HIF 時脈有 65 % 餘裕，表中所有長度都跟得上。S10 的 HIF 頻寬只比 100G 多 3 %，每個封包多的 1 拍就吃掉了餘裕。實際影響取決於 host 端是否會對 HSB 連續送出大量短封包：HSB 自己的控制流量（ECB、ARP）遠低於這個量；同一個網段的廣播風暴或 Sensor TX 的短封包串流才會觸發。
+
+**溢位之後（DP-1）。** 模型重現了 [rx_parser 注意事項 5](modules/rx_parser.md#注意事項) 的機制：讀出被擋 2000 拍（Bridge 背壓）時輸入 FIFO 丟了 1129 個 beat；`in_pkt_cnt` 比 `out_pkt_cnt` 多 6；擋住結束很久之後送入的 63 個封包**全部**配到錯的 metadata，輸出中間出現 19132 個空拍。對照組（只擋 400 拍、沒有溢位）完全正常。
+
+**Bridge host RX 緩衝（BR-1）。** 同一個腳本也模擬 `bridge_pkt_proc` 的 host RX 緩衝（`o_axis_rx_tready` 沒接、almost full 224）：先送 200、1500 byte，再送一個 2000 byte（250 拍），之後的 20 個 1500-byte frame 一個都出不來，計數停在 225；全部 1500 byte 時 23 個都正常。
+
+## 8. 控制平面
 
 | 項目 | 估算 |
 |---|---|
@@ -112,7 +148,7 @@ frame 完成通知（metadata 封包）在最後一個資料封包之後立即�
 
 需要多步驟的操作（例如 I2C 交易）可以用事件序列器在 FPGA 內執行，減少 ECB 往返（[event](modules/event.md)）。
 
-## 8. 時間同步精度（推斷）
+## 9. 時間同步精度（推斷）
 
 | 誤差來源 | 大小 |
 |---|---|

@@ -170,7 +170,9 @@ host 軟體的用法可以佐證：`jesd.cpp` 寫 `0x0120_0000 = 0x3`（啟用�
 ## 注意事項
 
 1. **多個 SIF TX 只有 sensor 0 的 quanta 有效。** `HOLOLINK_top` 把每個 `pause_gen.i_pause_time` 都接到 `tx_pause_quanta[0]`（[L1747](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L1747)）。
-2. **FIFO 滿時遺失的是 beat，不是整包。** 下游感測器會收到殘缺的封包，`tlast` 也可能遺失（推斷）。
+2. **FIFO 滿時遺失的是 beat，不是整包；`tlast` 遺失時兩個封包接成一個。** `axis_buffer_tx` 的 `gbx_axis_tready` 寫死為 1（`!fifo_afull` 被註解掉，[axis_buffer_tx.sv#L248](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/axis_buffer_tx.sv#L248)），`o_axis_rx_tready` 也沒有接出去；`dc_fifo_generic` 滿時 `wr_en = wr & ~full & wr_init_done`（[dc_fifo_generic.sv#L139](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L139)）直接不寫。`WAIT2SEND = 0`，輸出不依賴封包計數，所以和 [`rx_parser`](rx_parser.md#注意事項) 不同，這裡**不會**造成之後的封包永久錯位：受影響的只有溢位當下的封包（被截斷，或和下一個封包合併）。溢位有兩個來源：
+   - host 送得比 SIF 消耗快，而 PAUSE 沒有啟用（`pause_ena` reset 值 0）或沒有及時生效。
+   - `tx_data_output_ena = 0` 時輸出被 `afull_seen` 擋住，但輸入照樣寫入：在啟用前送來的資料會先把 FIFO 填滿再開始丟（R，v7 逐行確認；v6 為推斷）。
 3. **`saw_overflow` 的判斷比實際溢位早一格。** 它看 `buffer_count == FIFO_DEPTH − 1`，而且只在 `afull_seen` 後有效；預填期間就溢位不會被記錄。
 4. **`HALF_SECOND` 計數器（[L98–L114](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sensor_tx/tx_stream_buffer.sv#L98-L114)）產生的 `heartbeat` 沒有被使用。** 常數假設 APB 時脈 100 MHz。
 

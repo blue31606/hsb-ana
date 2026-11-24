@@ -68,7 +68,8 @@
 
 - FIFO 裡 `tkeep` 存成最高有效 byte 的 index，假設 `tkeep` 是連續低位 1。
 - `WAIT2SEND`：輸入端每寫入一個 `tlast` 計數 + 1，雙時脈時以 Gray code 經 2 級同步器送到輸出端；計數不同代表有完整封包可讀。送出 `tlast` 的那一拍不預讀，所以封包間至少一拍空檔。
-- `NO_BACKPRESSURE = 1`：FIFO 滿時 `sc_fifo` 丟掉 beat（`wr_en = wr & ~full`），但 `WAIT2SEND` 的封包計數仍依「輸入端接受」計算。`tlast` 被丟掉時計數與實際內容會不一致（推斷）。
+- `NO_BACKPRESSURE = 1`：FIFO 滿時 `sc_fifo` 丟掉 beat（`wr_en = wr & ~full`），但 `WAIT2SEND` 的封包計數 `in_pkt_cnt` 加的是 `fifo_wren && tlast`，`fifo_wren` 不看 `full`。`tlast` 被丟掉時計數永遠比實際多 1，之後 `WAIT2SEND` 的保證失效，直到 reset（R + M，v7；`rx_parser` 中的後果見 [rx_parser 注意事項 5](rx_parser.md#注意事項)）。
+- `NO_BACKPRESSURE = 0` 但 `o_axis_rx_tready` 沒有接出去時（Bridge 的 host RX 緩衝）：almost full 後 `gbx_axis_tready = 0`，上游送來的 beat 不會寫入，`tlast` 也不計數；被截斷的封包永遠不完整，`WAIT2SEND` 永遠不放行（[bridge 注意事項 7](bridge.md#注意事項)）。
 
 `sensor_tx/axis_buffer_tx.sv` 是它的修改版：拿掉 `WAIT2SEND`、輸入端 `tready` 綁 1、讀出端等下游 `tready` 才預讀，讓輸出 `tvalid` 連續。
 

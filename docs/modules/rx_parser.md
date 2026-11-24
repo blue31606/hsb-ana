@@ -208,7 +208,7 @@ LS 封包另外在**進入** LS FIFO 時檢查空間：`fcs_buffer` 在封包 `t
 
 - 封包 `tlast` 之後還要等 IPv4 checksum pipeline（`proc_pipeline[4]`），大約 4 拍。
 - metadata FIFO 的 `empty` 是暫存輸出，再加 `hdr_ready` 暫存一拍，所以封包收完到開始輸出約 7 拍。
-- 每個封包之間至少有 2 拍空檔（`hdr_rden` 一拍、`buf_axis_tready` 重新拉高一拍）。
+- 連續讀出時每個封包之間只有 **1 拍**空檔：`buf_axis_eop` 的下一拍 `buf_axis_tready = 0`、同一拍 `hdr_rden = 1`，再下一拍 `buf_axis_tready` 重新拉高，而下一個封包的第一拍已經由 `fifo_rden` 預取好。n 拍的封包讀出需要 n + 1 拍（v7 以[逐拍模型](../../tools/model/rx_parser_model.py)確認；v6 以前寫成至少 2 拍是錯的）。各板級能否跟上線速見 [performance §7](../performance.md#7-rx_parser-讀出能力逐拍模型)。
 
 ## 暫存器
 
@@ -235,8 +235,13 @@ Reset 值來自 [`RST_VAL`（L164）](https://github.com/nvidia-holoscan/holosca
 2. **`lpbk_udp_port` 暫存器沒有作用。** 分類用的是常數 `LOOPBCK_UDP_PORT`。
 3. **PTP messageType 沒有依 VLAN 位移。** `rx_msg_type_ptp_hdr <= hdr_array[14][3:0]`（[L536](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/rx_parser/rx_parser.sv#L536)）。帶 VLAN 的 PTP 封包，byte 14 是 VLAN TCI 的高位，不是 messageType。影響 `o_ptp_sync_msg` 與 Bridge 的 PTP 類型編碼。`ptp_top` 自己會再解析封包，不受影響（推斷）。
 4. **分類沒有直接檢查 EtherType == 0x0800。** IP 類封包靠 protocol 欄位 + MAC + IP 比對。非 IP 封包剛好在這些 byte 出現相符的值時會誤判，但機率極低。
-5. **輸入 FIFO 溢位行為。** `NO_BACKPRESSURE = 1` 時，`sc_fifo` 滿了會直接丟掉 beat（`wr_en = wr & ~full`），不是整包丟棄。被丟掉的若是 `tlast` beat，封包邊界會錯位（推斷，需模擬確認）。正常情況下 FIFO 只需容納約 2 個封包，所以只有讀出長時間停滯（例如 Bridge 背壓）才可能發生。
-6. **Metadata FIFO 比資料 FIFO 先滿。** `META_FIFO_DEPTH = 31` 筆，資料 FIFO 可容納的最小封包數（2 × 4096 / 64 = 128）比它多。大量連續最小封包時，若讀出比進來慢，metadata 會先溢位（推斷）。以 64-bit 匯流排估算：每個封包讀出額外約 2 拍，進來時 IFG + preamble 約 2.5 拍，餘裕很小。
+5. **輸入 FIFO 溢位後，資料與 metadata 永久錯開，直到 reset。** `NO_BACKPRESSURE = 1` 時 `gbx_axis_tready` 恆為 1，`sc_fifo` 滿了直接丟 beat（`wr_en = wr & ~full`，[sc_fifo.sv#L109](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/sc_fifo.sv#L109)）。但 `axis_buffer` 的封包計數 `in_pkt_cnt` 加的是 `fifo_wren && tlast`，而 `fifo_wren = gbx_axis_tvalid && gbx_axis_tready` 沒有看 `full`（[axis_buffer.sv#L213](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_buffer.sv#L213)、[#L266](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_buffer.sv#L266)）。所以被丟掉的 `tlast` 仍然被算成「一個完整封包」：
+   - 資料 FIFO 裡少了一個 `tlast`，讀出時被截斷的封包和下一個封包接成一包；metadata FIFO 卻每個輸入封包各一筆。之後每一包都配到**前一包**的 metadata（分類、dest MAC、QP 都錯）。
+   - `in_pkt_cnt` 永遠比實際多 1，`WAIT2SEND` 的保證失效：讀出會在封包還沒收完時就開始，輸出中間出現 `tvalid` 空拍。
+   - 這兩個狀態不會自行恢復，只有 reset 能清掉。
+
+   逐拍模型重現了這個過程：Bridge 模式下讀出被擋 2000 拍，輸入 FIFO 丟掉 1129 個 beat；之後送入的 63 個封包**全部**配錯 metadata（R + M，[performance §7](../performance.md#7-rx_parser-讀出能力逐拍模型)）。讀出被擋只有兩種來源：Bridge 背壓（只擋 `is_btx` 封包），以及 512-bit / 201.42 MHz 的 Terasic S10 在 100G 下連續收到短封包（讀出每包多 1 拍，見[上面的時序](#時序)）。10G 板級與 PYNQ 的讀出在任何封包長度下都跟得上線速。
+6. **Metadata FIFO 比資料 FIFO 先滿，而且三個 metadata FIFO 各自丟。** `META_FIFO_DEPTH = 31`（實際 32），64-bit / MTU 4096 時資料 FIFO 可容納 128 個最小封包，512-bit 時 256 個。`hdr_buffer`、`ipv4_buffer`、`fcs_buffer` 的寫入時間點不同（header 完成、IPv4 pipeline 結束、`tlast`），也都沒有看 `full`，所以溢位時三者丟掉的不是同一筆，彼此也會錯開。模型中 S10 收 60-byte 線速封包時三者分別丟 1222 / 1220 / 1223 筆（R + M）。觸發條件與第 5 項相同：只有讀出落後時才會發生。
 
 ## 不屬於 HSB 的流量
 

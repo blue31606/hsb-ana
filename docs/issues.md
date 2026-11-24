@@ -11,7 +11,7 @@
 | **低** | 影響小、只在少用的功能或極端條件下出現，或有明確的軟體迴避方式 |
 | **註** | 註解、命名、死碼、沒有接的訊號；不影響功能 |
 
-方法代號沿用 VERIFICATION：**R** 讀 RTL、**X** 與 host 軟體交叉比對、**I** 推斷、**N** 已用 [數值驗證](verification-calcs.md) 確認。
+方法代號沿用 VERIFICATION：**R** 讀 RTL、**X** 與 host 軟體交叉比對、**I** 推斷、**N** 已用 [數值驗證](verification-calcs.md) 確認、**M** 已用[逐拍模型](../tools/model/)重現（v7 新增）。
 
 ## 總表
 
@@ -19,8 +19,8 @@
 
 | ID | 等級 | 模組 | 問題 | 觸發條件 | 方法 | 建議修正 |
 |---|---|---|---|---|---|---|
-| DP-1 | 中 | `rx_parser` | 輸入 FIFO 滿時丟 beat 而不是整包，被丟的若是 `tlast` 會讓封包邊界錯位 | 讀出長時間停滯（例如 Bridge 反壓、LS 路徑忙）且 `NO_BACKPRESSURE = 1` | R + I | 改成整包丟棄：在 SOF 檢查剩餘空間 ≥ MTU，不夠就丟整包並計數 |
-| DP-2 | 中 | `rx_parser` | metadata FIFO（31 筆）比資料 FIFO（約 128 個最小封包）先滿 | 大量連續最小封包，讀出比進來慢 | I | 加深 metadata FIFO 到與資料 FIFO 的最小封包數相同，或在 metadata FIFO almost full 時丟包 |
+| DP-1 | 中 | `rx_parser` | 輸入 FIFO 滿時丟 beat，但 `in_pkt_cnt` 照樣計入被丟的 `tlast`；之後每個封包都配到前一包的 metadata、`WAIT2SEND` 失效，**直到 reset** | 讀出停滯讓輸入 FIFO 填滿：Bridge 背壓，或 Terasic S10 在 100G 下連續收到短封包（DP-15） | R + M | 改成整包丟棄：在 SOF 檢查剩餘空間 ≥ MTU，不夠就丟整包並計數；`in_pkt_cnt` 只計實際寫入的 `tlast` |
+| DP-2 | 中 | `rx_parser` | metadata FIFO（32 筆）比資料 FIFO（128–256 個最小封包）先滿；三個 metadata FIFO 寫入時間不同、各自丟，彼此錯開 | 讀出落後於輸入（同 DP-1）；10G 板級與 PYNQ 不會發生 | R + M | 加深 metadata FIFO 到與資料 FIFO 的最小封包數相同，或在任一 metadata FIFO almost full 時整包丟棄 |
 | DP-3 | 中 | `rx_parser` | 帶 VLAN 的 PTP 封包從 byte 14 讀 messageType（那是 VLAN TCI） | 網路上的 PTP 帶 802.1Q tag | R | 見[修正草稿 F-4](#f-4rx_parser-vlan-ptp-messagetype) |
 | DP-4 | 低 | `rx_parser` | 分類不檢查 EtherType == 0x0800 | 非 IP 封包剛好在 protocol / IP 位置出現相符的值 | R | 在 IP 類條件中加 `ethertype == 0x0800`（VLAN 時看內層） |
 | DP-5 | 中 | `packetizer` | `latency_cnt` 只有 3 bit，`latency ≥ 9` 時 FSM 停在 `WAIT` | 軟體設定 `pack_ctrl[27:24] ≥ 9`；host 目前固定 1 | R | 見 [F-3](#f-3packetizer-latency_cnt-寬度) |
@@ -31,8 +31,9 @@
 | DP-10 | 低 | `dp_pkt_ts` | FIFO 與每 VP 4 筆 RAM 沒有溢位檢查 | 一個 VP 累積超過 4 個未送 metadata 的 frame | I | 加溢位旗標到狀態暫存器 |
 | DP-11 | 低 | `dp_pkt_top` | 同一個 VP 被多個 host 的 `vp_mask` 選中時只送給編號最大的 host | 軟體設定重疊的 `vp_mask` | R | 文件化為非法設定，或在設定時偵測並回報 |
 | DP-12 | 中 | `flow`（host + RTL） | buffer 環不能跨 8 GB 對齊邊界，`VA[32:0]` 會回捲 | host 配置的 buffer 跨過 8 GB 邊界 | R + I | host 配置時檢查；或 RTL 把 page 位址擴到完整寬度 |
-| DP-13 | 低 | `eth_pkt` | 逾時恢復時 MAC 可能收到半個封包 | 某個輸入源在封包中途停住超過逾時 | I | 逾時時補送 `tlast` 並標記錯誤（`tuser`），而不是直接倒掉 |
+| DP-13 | 低 | `eth_pkt` | 逾時恢復時 MAC 送出「停住那一刻的封包開頭 + 仲裁器當下封包的後半段」接成的一個 frame | 某個輸入源或 MAC 在封包中途停住超過逾時 | R | 逾時時補送 `tlast` 並標記錯誤（`tuser`），恢復後從封包邊界開始 |
 | DP-14 | 低 | `roce_icrc` / `lfsr_hc` | 只支援固定幾種最後一拍長度；沒有方程式的資料寬度靜默不算 CRC | 改 header 長度（GRH 等）或新增 HIF 寬度 | R + N | 加 elaboration 期檢查（`$error`），不支援的組合直接編譯失敗 |
+| DP-15 | 中（S10） | `rx_parser` | n 拍封包讀出需要 n + 1 拍；512-bit / 201.42 MHz 時連續短封包的讀出比 100G 線速慢，輸入緩衝逐漸填滿，接著觸發 DP-1、DP-2 | Terasic S10，100G 連續收到 2 KB 以下的封包：60 byte 約 108 個、1500 byte 約 720 個之後溢位 | R + M | 讀出改成背靠背（`eop` 同拍讀下一筆 metadata），或提高 HIF 時脈 |
 
 ### Host → 感測器（SIF TX）與 RoCE ACK
 
@@ -44,7 +45,7 @@
 | TX-4 | 低 | `roce_ack` | IPv4 checksum 增量更新在借位時差 2 | 請求 IPv4 長度 < 48（只有不帶 payload 的 SEND）且 checksum ≤ 3 | R + N | 見 [F-2](#f-2roce_ack-ipv4-checksum) |
 | TX-5 | 低 | `roce_ack` / `sensor_tx_pkt_proc` | 感測器選擇的 QP 位元範圍不同（`[7:1]` vs `[8:1]`） | QP bit 8 為 1 | R | 統一成同一個函式 / 參數 |
 | TX-6 | 中 | `sensor_tx_pkt_proc` | header 長度寫死 54 byte，RC WRITE 的 16 byte RETH 留在送給感測器的資料裡 | `ENABLE_ROCE_ACK` 且 host 用 RC WRITE | R + I | 依 opcode 決定要去掉的長度（WRITE_FIRST / ONLY 多 16 byte） |
-| TX-7 | 中 | `sensor_tx_pkt_proc` / `tx_stream_buffer` | 路徑沒有 `tready`，FIFO 滿時遺失 beat（不是整包），`tlast` 也可能遺失 | host 送得比感測器消耗快，pause 沒有及時生效 | R + I | FIFO 滿時丟整包並補 `tlast`；或在 SOF 檢查空間 |
+| TX-7 | 中 | `sensor_tx_pkt_proc` / `tx_stream_buffer` | 路徑沒有 `tready`（`axis_buffer_tx` 的 `gbx_axis_tready` 寫死 1），FIFO 滿時遺失 beat；`tlast` 遺失時兩個封包接成一個。不會造成之後的封包永久錯位 | host 送得比感測器消耗快且 PAUSE 未啟用；或 `tx_data_output_ena = 0` 期間就有資料送入 | R | FIFO 滿時丟整包並補 `tlast`；或在 SOF 檢查空間；啟用前的資料直接丟棄 |
 | TX-8 | 中 | `HOLOLINK_top` / `tx_stream_buffer` | 每個 `pause_gen` 都接 `tx_pause_quanta[0]`，其他 SIF TX 的 quanta 無效 | 多個 SIF TX 設定不同的 quanta | R | 見 [F-6](#f-6pause-quanta-索引) |
 | TX-9 | 低 | `tx_stream_buffer` | `saw_overflow` 判斷早一格，且預填期間溢位不記錄 | 預填期間 FIFO 就滿 | R | 改用實際寫入失敗（`wr_en && full`）設旗標 |
 | TX-10 | 低 | `roce_ack` | host QP RAM 固定 2 個 word，SIF TX 2 以上與 0、1 共用 host QP / RNR timer | `ENABLE_ROCE_ACK` 且 SIF TX ≥ 3（目前沒有板級符合） | R | `R_CTRL` 改成 `N_QP`（或 SIF TX 數） |
@@ -76,7 +77,7 @@
 
 | ID | 等級 | 模組 | 問題 | 觸發條件 | 方法 | 建議修正 |
 |---|---|---|---|---|---|---|
-| BR-1 | 高（啟用時） | `bridge` | 64-bit 設定下大於約 1.8 KB 的 host 封包讓該埠的 bridge 路徑卡死，並經 `rx_parser` 擋住同埠所有流量 | 啟用 Bridge 且 host 送 jumbo frame | I | host RX 緩衝深度 ≥ 最大 MTU，或改成 cut-through |
+| BR-1 | 高（啟用時） | `bridge` | host RX 緩衝的 `o_axis_rx_tready` 沒有接，almost full 後 beat 被靜默丟棄；被截斷的封包永遠不算完整，這個 host 埠的 bridge 路徑停擺或之後的 frame 合併、路由錯開，直到 reset。`rx_parser` 不受影響 | 啟用 Bridge，64-bit 下單一封包 > 約 1.8 KB，或輸出暫停時累積 > 224 beat | R + M | 接上 `o_axis_rx_tready` 並讓 `rx_parser` 尊重它；或 host RX 緩衝深度 ≥ 最大 MTU + 餘裕、改成整包丟棄 |
 | BR-2 | 中 | `bridge` | 透明時鐘用 OR 而不是加法修正 correctionField | master 的 correctionField ≠ 0 | R + I | 用加法器（`axis_mask` 的 `OP = "ADD"` 或獨立加法） |
 | BR-3 | 低 | `bridge` | residence time 16 bit 拍數，> 419 µs 回捲；只保留 24 bit ns | 長時間排隊 | R | 擴寬計數器 |
 | BR-4 | 低 | `bridge` | host 端 Sync 一律量到 SIF 0 | Sync 送往其他 SIF 埠 | R | 每埠各自量測 |
@@ -96,7 +97,7 @@
 | PE-4 | 低 | `uart` | 取樣點約在 bit 的 5/8；2 stop bit 不檢查第二個；假 start bit 仍佔用一整個 frame | 鮑率誤差大、雜訊 | R + I | 取樣點改在 `cnt == 3`；假 start 直接回 IDLE |
 | PE-5 | 中 | `i2c` | host 固定 `clk_cnt = 0x19`，APB 50 / 100 MHz 的板級上 SCL 約 1 / 2 MHz | PYNQ、Terasic S10 板級（若軟體沒有另行設定） | R + I | host 依 enumeration 的 APB 頻率計算 `clk_cnt` |
 | PE-6 | 低 | `i2c` | 10-bit 位址讀取在 repeated start 後又寫出一次低 8 bit 位址 | 使用 10-bit 位址的裝置 | R + I | `I2C_RS_DEV_ADDR` 在 10-bit 模式跳過 |
-| PE-7 | 中 | `eeprom_info` | EEPROM 不存在時 MAC 變成緩衝區殘留值，不保留預設 `CA:FE:C0:FF:EE:00` | 板子沒有 EEPROM 或 EEPROM 沒回應 | R + I | NACK 時保留預設值 |
+| PE-7 | 中 | `eeprom_info` | EEPROM 不存在時 MAC 變成 I2C 資料緩衝 RAM 的上電內容（多數 FPGA 為 0），不保留預設 `CA:FE:C0:FF:EE:00`；`eeprom_info` 不檢查 NACK | 板子沒有 EEPROM 或 EEPROM 沒回應 | R | 輪詢完成後檢查 `status[3]`（NACK），NACK 時保留預設值並設錯誤旗標 |
 | PE-8 | 低 | `eeprom_info` | CRC 計算跳過 byte 255 又檢查是否為 0，正確燒錄的 EEPROM 約 99.6 % 判為錯誤；`eeprom_crc_err` 沒有接 | 每次開機 | R + X + N | 見 [F-1](#f-1eeprom-crc) |
 | PE-9 | 低 | `i2s_clk_gen` | `CTRL2 = 8`、`CTRL2 ∉ 1–8`、`mclk_div ≤ 1` 時 BCLK 不動 | 軟體設定超出範圍 | R | 見 [F-10](#f-10i2s-除數) |
 | PE-10 | 低 | `i2s_serdes` | PCM 格式等同 LJ；RX 的 L / R 沒有標記，溢位後可能左右對調；`i_rx_ready` 沒有使用 | 使用 PCM / 溢位 | R + I | 實作 DSP 短 frame sync；RX 輸出加聲道位元（例如 `tuser`） |
