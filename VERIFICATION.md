@@ -7,7 +7,7 @@
 | 代號 | 方法 | 可信度 |
 |---|---|---|
 | **R** | 讀 RTL | 高；但時序細節（確切拍數）可能差 1–2 拍 |
-| **X** | RTL 與 host 軟體（`src/hololink/core/*.cpp/.hpp`）交叉比對 | 很高：兩邊獨立寫成，互相一致 |
+| **X** | RTL 與 host 軟體（`src/hololink/core/*.cpp/.hpp`）交叉比對；v7.1.1 起 host 的位址常數由 `tools/check_host_regs.py` 自動比對 | 很高：兩邊獨立寫成，互相一致 |
 | **A** | `tools/gen_regmap.py` 自動解析 | 很高（對 `regmap_pkg.sv` 的內容而言） |
 | **I** | 推斷：從結構或部分程式碼推論，沒有逐行追完 | 中；文件中標「推斷」 |
 | **N** | 數值驗證：`tools/verify/verify_calcs.py` 照 RTL 重寫運算，與獨立參考實作比對（[結果](docs/verification-calcs.md)） | 很高（只限運算本身，不含時序） |
@@ -84,8 +84,8 @@
 | ECB 封包在 pair 中途結束仍執行一次 APB 存取；host 預設 `block_enable = 1`，每一次單一暫存器寫入都是單組 `WR_BLOCK`，被補齊後多寫一次 `glb_scratch`（v7.1：由 R + I 升為 R + X） | R + X | [rx_ls_parser 注意事項](docs/modules/rx_ls_parser.md#注意事項) |
 | ECB `cmd_dout` 跨時脈沒有同步器；BOOTP reply 沒有 xid / chaddr 驗證（R + I）；LS 路徑所有 host 埠共用：輸入 round-robin、各引擎與輸出仲裁只有一份（v7.1：R） | R（`cmd_dout` 約束為 I） | 同上 |
 | `roce_ack`：重複封包不回 ACK、第一個 ACK 的 PSN 為 0（v7.1：模型重現，兩者合起來第一個封包的重送永遠沒有回應）；IPv4 checksum 增量更新在借位時差 2（N）；板級都沒有定義 `SIF_TX_ROCE_RC_ENABLE`，host 軟體只送 UC SEND（X） | R + M + N + X | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
-| `reg_cdc` 在握手進行中的更新會遺失（HSB 內由 `apb_switch` 的 10 拍延遲避免） | R + I | [lib §reg_cdc](docs/modules/lib.md#reg_cdc) |
-| `streaming_cdc` 讓 HIF 端的 PTP 時間固定晚約 20–40 ns，未補償 | R + I | [lib §streaming_cdc](docs/modules/lib.md#streaming_cdc) |
+| `reg_cdc` 在握手進行中的更新會遺失；`s_apb_reg` 的所有控制暫存器共用觸發，寫同一區塊的不同暫存器也會遺失；`apb_switch` 保證 ≥ 16 個 APB 時脈，只在模組時脈低於約 0.48 倍 APB 時不足（v7.1.1：R + M，`reg_cdc_model.py`） | R + M | [lib §reg_cdc](docs/modules/lib.md#reg_cdc) |
+| `streaming_cdc` 讓 HIF 端的 PTP 時間固定晚 3–4 個 HIF 時脈（10G 板級 19.2–25.6 ns、S10 14.9–19.9 ns、PYNQ 9.3–12.4 ns）再加最多 1 個 PTP 時脈，未補償（v7.1.1：逐行推出拍數，由 R + I 升為 R） | R | [lib §streaming_cdc](docs/modules/lib.md#streaming_cdc) |
 | `dc_fifo` 實體深度補到 2 的次方；AUTO RAM 判斷條件前後不一致 | R | [lib §dc_fifo_generic](docs/modules/lib.md#dc_fifo_generic--dc_fifo_stub) |
 | EEPROM 不存在時 MAC 變成 I2C 資料緩衝 RAM 的上電內容（v7：由 I 升為 R）；EEPROM CRC 檢查與寫入工具不一致（N：正確映像 99.6 % 判為錯誤）且結果未使用 | R + X + N | [boot_and_reset 注意事項](docs/modules/boot_and_reset.md#注意事項) |
 | Bridge：本 repo 沒有板級使用；只支援 Layer 2 PTP；一般 multicast 被丟棄；host 優先於 SIF | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
@@ -100,6 +100,11 @@
 | `delayed_io` 取消不停止計數器；CPNX100 延遲多 2.4 % | R | [ref_design §delayed_io](docs/modules/ref_design.md#delayed_io) |
 | `dp_pkt_ts` 每 VP 4 筆時間戳 RAM 沒有滿的檢查，第 5 筆覆寫最舊一筆（v7.1：由 I 升為 R） | R | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
 | 單一 VP 時 `hif_sif_mask` 以 6 拍週期振盪，封包間隔多 0–3 拍（DP-16，v7.1 新增） | R + M | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
+| buffer 環跨 8 GB 邊界時 `VA[32:0]` 回捲，host 只檢查 32-bit page 編號（v7.1.1：由 R + I 升為 R + X） | R + X | [flow 注意事項](docs/flow.md#注意事項) |
+| I2S RX 緩衝 almost full 時樣本不寫入，丟掉奇數個樣本後左右對調（v7.1.1：由 I 升為 R） | R | [ref_design §i2s_top](docs/modules/ref_design.md#i2s_top) |
+| host 讀 I2S 狀態用 `0x24`–`0x30`，RTL 狀態區在 `0x800`，讀取得到 `pslverr`（PE-15，v7.1.1 新增） | R + X | [ref_design §i2s_top](docs/modules/ref_design.md#i2s_top) |
+| host 用到的 96 個位址常數中 87 個在 RTL 暫存器索引找得到；其餘 9 個是 I2S 狀態 4 個（PE-15）與 S10 的 JESD 廠商 IP 5 個（不在本 repo 的 RTL 內） | X（自動） | `tools/check_host_regs.py` |
+| 文件中 622 個原始碼連結的行號都在檔案範圍內；222 個可依識別字判斷的連結中，195 個自動吻合、27 個人工確認 | 自動 + 人工 | `tools/check_links.py`、`tools/check_links_reviewed.txt` |
 
 ## 時序圖
 

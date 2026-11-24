@@ -82,6 +82,9 @@
 | `tools/model/dp_pkt_model.py` | v7.1：`dp_pkt_top` header FSM 與封包交接的逐拍模型，計算 Data Plane 封包間隔與速率（performance §3、DP-16） |
 | `tools/model/uart_rx_model.py` | v7.1：UART 接收端逐拍模型（PE-3、PE-4） |
 | `tools/model/roce_ack_model.py` | v7.1：`roce_ack` 回應決策的封包層級模型（TX-1、TX-2、TX-3） |
+| `tools/model/reg_cdc_model.py` | v7.1.1：`reg_cdc` 兩時脈模型，算出 `s_apb_reg` 寫入不遺失所需的間隔（CP-6） |
+| `tools/check_links.py` | v7.1.1：檢查文件中每個原始碼連結的 commit、檔案、行號範圍，並比對引用處的識別字是否出現在所引行內；人工確認過的列在 `tools/check_links_reviewed.txt` |
+| `tools/check_host_regs.py` | v7.1.1：解析 host 軟體的位址常數，逐一對照 RTL 暫存器索引 |
 | `tools/check_tests.py` | v7：靜態核對 `tests/` 草稿用到的埠、參數、testbench 名稱、task 參數個數與階層路徑；不需要 HDL 工具 |
 
 重新產生：
@@ -99,6 +102,9 @@ python3 tools/model/rx_parser_model.py --wave docs/timing/rx_parser_readout.wave
 python3 tools/model/dp_pkt_model.py
 python3 tools/model/uart_rx_model.py      # 約 2 分鐘
 python3 tools/model/roce_ack_model.py
+python3 tools/model/reg_cdc_model.py
+python3 tools/check_links.py ../holoscan-sensor-bridge
+python3 tools/check_host_regs.py ../holoscan-sensor-bridge
 ```
 
 ## 名詞
@@ -126,4 +132,5 @@ python3 tools/model/roce_ack_model.py
 | v5 | `fc2b904` | 重畫頂層方塊圖並新增跨時脈地圖、控制平面 / Data Plane 全貌；`rx_ls_parser`、`roce_icrc`、`roce_ack`、Bridge、APB、開機與 reset 補到逐行；CDC 元件逐行並逐一檢查使用處 |
 | v6 | `1981132` | 新增問題清單（分級、觸發條件、修正草稿）、數值驗證腳本、定向測試計畫與 SV 草稿；SPI / UART 位元引擎、`ram_player`、I2S、IMU 補到逐行或主要邏輯；獨立稽核後修正 20 多處錯誤（見 [VERIFICATION](VERIFICATION.md#版本修正)），並新增 Bridge 的 `del_req_val` 與 CAM 未命中兩個 RTL 問題；之後補上 `lfsr_hc` 全部寬度的數值驗證、追完稽核留下的 2 項、`delayed_io` 逐行 |
 | v7 | `37a2b9c` | 推斷項目重新追 RTL：DP-1、DP-2、BR-1、DP-13、TX-7、PE-7 全部升為 R 或 R + M，BR-1 與 `rx_parser` 讀出空檔更正；新增逐拍模型（方法 M）與 DP-15（Terasic S10 在 100G 下連續短封包溢位）；新增測試草稿靜態檢查並修正 S6 的巨集名稱；新增 S8–S12 定向測試（TX-6、TX-7、TX-8、DP-1 / DP-2、PE-7） |
-| v7.1 | 目前版本 | 剩餘推斷項目追完 RTL（DP-6、DP-10、CP-1、CP-5、TX-6、BR-2、PE-5、PE-6 等升為 R 或 R + X）；新增 `dp_pkt_top`、UART、`roce_ack` 模型，Data Plane 封包間隔改由模型計算並更正「兩埠無法同時達到線速」，新增 DP-16；RC 相關項目標為「啟用時」；`rx_parser` 模型改為精確並產生時序圖；新增 S13（DP-8） |
+| v7.1 | `804ebda` | 剩餘推斷項目追完 RTL（DP-6、DP-10、CP-1、CP-5、TX-6、BR-2、PE-5、PE-6 等升為 R 或 R + X）；新增 `dp_pkt_top`、UART、`roce_ack` 模型，Data Plane 封包間隔改由模型計算並更正「兩埠無法同時達到線速」，新增 DP-16；RC 相關項目標為「啟用時」；`rx_parser` 模型改為精確並產生時序圖；新增 S13（DP-8） |
+| v7.1.1 | 目前版本 | 以讀碼與文字解析補強：DP-12、CP-6、PT-7、PE-10 升為 R / R + X / R + M；新增原始碼連結檢查與 host 位址常數比對；暫存器索引補上 UART 遺漏的 3 個暫存器與 `delayed_io`、`i2s_top` 兩個區塊；找到 host 讀 I2S 狀態的位址與 RTL 不一致（PE-15） |

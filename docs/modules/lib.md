@@ -143,7 +143,11 @@
 - 握手進行中（`a_val_qq = 1`）又來一次 `i_a_val`：`a_reg_q` 被更新，但不會再發起握手，B 端保留舊值，直到下一次 `i_a_val`。
 - 請求剛放下、但 ack 還沒同步回來（`b2a_ack_sync[1] = 1`）時來一次 `i_a_val`：`a_reg_qq` 被更新，但請求被 ack 擋住沒有拉高，同樣不會送到 B 端。
 
-一次完整的握手約需「3 個 B 時脈 + 2 個 A 時脈」再加上 ack 放下的往返，A 為 APB（19.53 MHz）時約 6 個 APB 時脈。HSB 中 `reg_cdc` 的 A 端多半是 APB 寫入（`s_apb_reg`），而 `apb_switch` 每次 transaction 後強制等 10 拍才回 `IDLE`，所以連續兩次寫同一個暫存器至少隔 12 拍以上，不會觸發遺失。若換成更快的 APB master，或在 `SYNC_CLK` 以外的模式下由模組端高頻觸發，就要注意這個限制。
+**在 `s_apb_reg` 中的影響（v7.1，R + M）。** `s_apb_reg` 每個控制暫存器各有一個 `reg_cdc`，但 `i_a_val` 都接同一個 `reg_wdval`（[s_apb_reg.sv#L94](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L94)、[#L173–L185](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L173-L185)），它在**同一個區塊的任何一個暫存器**被寫入時都會產生脈衝。所以第一次寫入啟動了所有暫存器的握手，握手結束前第二次寫入**另一個**暫存器，那個暫存器的新值也不會送出（直到下一次寫入）。遺失與否取決於兩次寫入的間隔和兩端時脈比：
+
+- `apb_switch` 每次 transaction 後進 `DELAY` 數到 10（[apb_switch.sv#L168](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_switch.sv#L168)），加上 `REQUESTED`、`penable` 與 `s_apb_reg` 兩級暫存的 `pready`，同一個 master 的連續寫入至少相隔 16 個 APB 時脈。
+- [`tools/model/reg_cdc_model.py`](../../tools/model/reg_cdc_model.py) 照 `reg_cdc` 逐暫存器模擬兩個時脈、掃過 B 端相位：模組時脈 ≥ 8 倍 APB 時需 ≥ 6 拍、相同頻率需 ≥ 10 拍、APB 為模組時脈 2 倍時需 ≥ 16 拍；**模組時脈低於 APB 時脈約 0.48 倍時，16 拍的間隔不夠，會遺失**。
+- 板級：10G 板級的 APB 只有 19.53 MHz，所有模組時脈都比它快；PYNQ（APB 50 MHz）與 S10（APB 100 MHz）上，HIF 與 PTP 時脈都高於 0.48 倍 APB。只有 SIF 時脈低於 24 MHz（PYNQ）或 48 MHz（S10）的 SIF 區塊（例如 packetizer、`tx_stream_buffer` 的暫存器）才會觸發；SIF 時脈由板級決定，本 repo 未逐一確認。
 
 ### `streaming_cdc`
 
@@ -156,7 +160,16 @@
 | 來源較快 | 8-bit 相位累加器把寫入速率壓到目的端頻率的 99 % 以下，例如 PTP 100.45 MHz → APB 19.53 MHz：`PHASE_INCREMENT = 49`，寫入速率 = 49/256 × 100.45 ≈ 19.23 MHz |
 | 起動 | 目的端離開 reset 後的 `dst_ready` 同步回來源端才開始寫 |
 
-因為寫入速率永遠不超過讀出速率，FIFO 幾乎保持空的，延遲固定在 Gray 指標同步加上一次 RAM 讀取（約 3–4 個目的端時脈）。這代表 HIF 端看到的 PTP 時間比 PTP 計時器晚約 20–40 ns（推斷；RTL 沒有補償，`dp_pkt_top` 的 metadata 與 CoE 時間戳都取自這個值）。
+因為寫入速率永遠不超過讀出速率，FIFO 幾乎保持空的。一筆值從寫入到出現在 `o_dst_data` 的路徑（v7.1 逐行確認，R）：來源端寫入同一拍更新 `wr_gray` → 目的端兩級同步（`SYNC_DEPTH = 2`）→ `rdcount_nxt` 不為 0，下一拍 `empty` 清除（[dc_fifo_generic.sv#L296–L302](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L296-L302)）→ `fifo_rd_en = !fifo_empty`（[streaming_cdc.sv#L142](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/streaming_cdc.sv#L142)）→ 下一拍 `dout` 與 `dval`。共 3 個完整目的端時脈，加上寫入到第一個目的端邊緣的 0–1 個時脈，也就是 **3–4 個目的端時脈**；此外 `o_dst_data` 在兩次更新之間保持不變，來源較慢時最多再舊 1 個來源時脈（來源較快、經相位累加器降速時最多再舊 ⌈256 / `PHASE_INCREMENT`⌉ 個來源時脈）。
+
+| 板級 | 目的端（HIF） | CDC 固定延遲 | 加上取樣保持（PTP 時脈） |
+|---|---|---|---|
+| CPNX100 / NV MIPI | 156.25 MHz | 19.2–25.6 ns | 19.2–35.6 ns |
+| MPF200 | 156.25 MHz | 19.2–25.6 ns | 19.2–35.2 ns |
+| PYNQ RFSoC | 322.27 MHz | 9.3–12.4 ns | 9.3–22.4 ns |
+| Terasic S10 | 201.42 MHz | 14.9–19.9 ns | 14.9–29.8 ns |
+
+RTL 沒有補償這段延遲；`dp_pkt_top` 的 metadata 與 CoE 時間戳都取自這個值。v6 寫的「約 20–40 ns」在 10G 板級大致吻合，但 100G 板級較短。
 
 ### `dc_fifo_generic` / `dc_fifo_stub`
 

@@ -27,9 +27,11 @@
 | `0x0200_0300` | [Dataplane Packetizer](../modules/dp_pkt_top.md#暫存器) | `dp_pkt_top` | 0x1_0000 / host（HOST_IF_INST 個） | 7 |
 | `0x0300_0000` | [SPI](../modules/peripherals.md#spi--qspi) | `spi_ctrl_fsm` | -（SPI_INST 條匯流排共用） | 7 |
 | `0x0300_0200` | [I2C](../modules/peripherals.md#i2c) | `i2c_ctrl_fsm` | -（I2C_INST 條匯流排共用） | 8 |
-| `0x0300_0400` | [UART](../modules/peripherals.md#uart) | `uart_ctrl_fsm` | - | 7 |
+| `0x0300_0400` | [UART](../modules/peripherals.md#uart) | `uart_ctrl_fsm` | - | 10 |
 | `0x0600_0000` | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | `bridge_pkt_proc` | - | 3 |
 | `0x7000_0000` | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | `vsync_gen` | - | 6 |
+| `0x7000_0800` | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | `delayed_io` | - | 10 |
+| `0x8000_0000` | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | `i2s_top` | - | 13 |
 
 ## 全部暫存器
 
@@ -179,12 +181,15 @@
 | `0x0300_0280` | `status` | RO | [I2C](../modules/peripherals.md#i2c) | [0] busy、[2] arbitration lost、[3] NACK、[4] done |
 | `0x0300_0300` | `data` | RW | [I2C](../modules/peripherals.md#i2c) | 資料緩衝 |
 | `0x0300_0400` | `ctrl` | RW | [UART](../modules/peripherals.md#uart) | 啟用、TX / RX、loopback、資料位元、parity、FIFO reset、stop bit |
-| `0x0300_0404` | `baud / thresh` | RW | [UART](../modules/peripherals.md#uart) | [15:0] 鮑率除數、[31:16] FIFO 門檻 |
+| `0x0300_0404` | `baud / thresh` | RW | [UART](../modules/peripherals.md#uart) | [15:0] 鮑率除數、[23:16] / [31:24] TX FIFO 門檻 |
 | `0x0300_0408` | `int_en` | RW | [UART](../modules/peripherals.md#uart) |  |
 | `0x0300_040C` | `int_clr` | RW | [UART](../modules/peripherals.md#uart) |  |
+| `0x0300_0410` | `glitch` | RW | [UART](../modules/peripherals.md#uart) | [3:0] 視窗寬度、[7:4] / [11:8] start / data 多數決門檻、[16] 濾波啟用 |
 | `0x0300_0480` | `status` | RO | [UART](../modules/peripherals.md#uart) |  |
 | `0x0300_0484` | `int_status` | RO | [UART](../modules/peripherals.md#uart) |  |
-| `0x0300_0540` | `tx_data` | W | [UART](../modules/peripherals.md#uart) |  |
+| `0x0300_0540` | `tx_data` | W | [UART](../modules/peripherals.md#uart) | 讀回：TX FIFO 滿時 0xFF |
+| `0x0300_0544` | `rx_data` | RO | [UART](../modules/peripherals.md#uart) | 讀取時彈出 RX FIFO |
+| `0x0300_0548` | `last_rx` | RO | [UART](../modules/peripherals.md#uart) | 最後收到的 byte（`ctrl[10]` 清除） |
 | `0x0600_0000` | `broadcast_ports` | RW | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | [NUM_HOST-1:0] 廣播 / PTP 埠 |
 | `0x0600_0004` | `host0_fwd_mask` | RW | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | index 2h+1：host h 可轉送的 host 埠 |
 | `0x0600_0008` | `host0_sub_mask` | RW | [Bridge（BRIDGE_IF_INST）](../modules/bridge.md#暫存器) | index 2h+2：host h 訂閱的 SIF 埠 |
@@ -193,4 +198,27 @@
 | `0x7000_0008` | `VSYNC_DELAY` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | 相對秒起點的延遲（ns） |
 | `0x7000_000C` | `VSYNC_START` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | [0] 初始電位 |
 | `0x7000_0010` | `VSYNC_EXPOSURE` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | 脈衝寬度 |
-| `0x7000_0014` | `VSYNC_GPIO` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | [9:0] GPIO 多工 |
+| `0x7000_0014` | `VSYNC_GPIO` | RW | [vsync_gen（CPNX100 使用者 APB）](../modules/ref_design.md#vsync_gen) | [9:0] GPIO 多工（host 的 `I2S_CLOCK_CTRL` 也寫這個位址） |
+| `0x7000_0804` | `delay_us` | RW | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 延遲（µs），reset 1000 |
+| `0x7000_0808` | `set_now` | W | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 立即設 1（位元遮罩） |
+| `0x7000_080C` | `clr_now` | W | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 立即清 0（位元遮罩） |
+| `0x7000_0814` | `set_delayed` | W | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 延遲後設 1 |
+| `0x7000_0818` | `clr_delayed` | W | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 延遲後清 0 |
+| `0x7000_0820` | `cancel` | W | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 取消尚未執行的延遲操作 |
+| `0x7000_0880` | `out_state` | RO | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 目前輸出狀態 |
+| `0x7000_0884` | `pending` | RO | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 計數中的輸出 |
+| `0x7000_08F0` | `enable` | RW | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | [0] 全域啟用 |
+| `0x7000_08F8` | `cycles_per_us` | RO | [delayed_io（CPNX100 使用者 APB）](../modules/ref_design.md#delayed_io) | 除錯 |
+| `0x8000_0000` | `CTRL0` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | [0] TX、[1] RX 啟用 |
+| `0x8000_0004` | `CTRL1` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | MCLK 分頻 |
+| `0x8000_0008` | `CTRL2` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | BCLK 分頻代碼 |
+| `0x8000_000C` | `CTRL3` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | [1:0] 位元深度、[3:2] 格式 |
+| `0x8000_0010` | `CTRL4` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | [0] mono、[2] loopback |
+| `0x8000_0014` | `CTRL5` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | RX 封包拍數 |
+| `0x8000_0018` | `CTRL6` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | 中斷啟用（未使用） |
+| `0x8000_001C` | `CTRL7` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | LRCLK 極性 |
+| `0x8000_0020` | `CTRL8` | RW | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | slot 模式 |
+| `0x8000_0800` | `STAT0` | RO | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | locked（固定 1）；`W_OFST = 12`，狀態區從 0x800 開始 |
+| `0x8000_0804` | `STAT1` | RO | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) |  |
+| `0x8000_0808` | `STAT2` | RO | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) | [0] TX underrun、[1] RX overrun |
+| `0x8000_080C` | `STAT3` | RO | [i2s_top（CPNX100 使用者 APB）](../modules/ref_design.md#i2s_top) |  |

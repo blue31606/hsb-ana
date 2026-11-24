@@ -1,0 +1,31 @@
+# Citations flagged by tools/check_links.py and read by hand (v7.1.1).
+# Format: <doc>:<line-text fragment> <file>#L<range>  -- reason
+# The line number is not used (it moves when the doc is edited); the doc path, the cited
+# file and range identify the citation.
+docs/architecture/overview.md HOLOLINK_top.sv#L922-L960 -- gen_eth_pkt block, shows lso_axis_tdata without index
+docs/architecture/overview.md tx_stream_buffer.sv#L155 -- DUAL_CLOCK = 1 of axis_buffer_tx
+docs/modules/boot_and_reset.md eeprom_info.sv#L118-L256 -- register sequence written through m_apb[2] (named in the parent)
+docs/modules/data_gen.md HOLOLINK_top.sv#L1380 -- data_gen instance inside `ifdef SIF_RX_DATA_GEN
+docs/modules/dp_pkt_top.md dp_pkt_hdr.sv#L118-L190 -- states are named AXI_IDLE / AXI_SEND / AXI_LAST
+docs/modules/dp_pkt_top.md dp_pkt_top.sv#L123 -- RST_VAL holds 32'h5CE for dp_pkt_len
+docs/modules/peripherals.md i2c_ctrl_fsm.sv#L353-L354 -- ack_rise is the rising edge of cmd_ack
+docs/modules/peripherals.md spi.sv#L210-L252 -- STATE_SPI_SEND / STATE_SPI_WAIT drive rSDIO
+docs/modules/peripherals.md spi.sv#L100-L112 -- f_sdio_en gives SDIO_en
+docs/modules/peripherals.md spi.sv#L268-L283 -- next command taken from the inputs spi_ctrl_fsm drives
+docs/modules/peripherals.md spi.sv#L253-L258 -- stop is rSpiCmd[`PAUSE]
+docs/modules/peripherals.md uart.sv#L351-L406 -- glitch-filter voting block
+docs/modules/ptp.md ptp_parser.sv#L71-L81 -- o_flag = flags field (twoStepFlag is bit 9)
+docs/modules/ptp.md ptp_dly.sv#L349-L365 -- TX timestamp taken on i_tx_ts_vld (o_ptp_val after pulse_sync)
+docs/modules/ptp.md ptp_dly.sv#L244-L260 -- sequenceId counters
+docs/modules/ptp.md ptp_dly.sv#L398-L410 -- one-step branch sets pdly_ts_ld (= o_dly_ld)
+docs/modules/ptp.md dpll.sv#L63-L107 -- i_pd_vld is ofm_vld at the instance
+docs/modules/ptp.md ptp_timer.sv#L67-L70 -- 32-bit sec declaration
+docs/modules/ref_design.md FPGA_top.sv#L503 -- comment: vsync gets addr[11]=0, delayed_io addr[11]=1
+docs/modules/ref_design.md axis_gearbox.sv#L80 -- slot overwrite in the even-multiple gearbox
+docs/modules/roce.md lfsr_hc.sv#L408-L411 -- else branch passes the state through
+docs/modules/roce_ack.md s_apb_ram.sv#L85 -- reg_addrerr for words beyond R_CTRL
+docs/modules/roce_ack.md roce_ack.sv#L138-L143 -- bits of the ack control register
+docs/modules/rx_ls_parser.md rx_ls_parser.sv#L169-L171 -- dispatch on the one-hot tuser
+docs/modules/rx_ls_parser.md bootp.sv#L454-L460 -- reply latches the address field into ciaddr
+docs/modules/rx_parser.md rx_parser.sv#L799 -- ls_afull_iserr is the fcs_buffer copy of buf_rls_afull
+docs/modules/tx_stream_buffer.md HOLOLINK_top.sv#L1729-L1736 -- tx_pause_req is o_eth_pause at the instance

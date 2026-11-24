@@ -30,7 +30,7 @@
 | DP-9 | 低 | `dp_pkt` | 不檢查 VP `tvalid`，VP 中途斷流時把無效資料當 payload | 違反 VP 契約（正常情況下 `virtual_port` 的閘控避免） | R | 加 assertion；payload 讀取時 `tvalid` 為 0 就設錯誤旗標 |
 | DP-10 | 低 | `dp_pkt_ts` | 每 VP 4 筆的 SOF 時間戳環狀 RAM 用 2-bit 指標，沒有滿的檢查：第 5 個未讀的 SOF 覆寫最舊的一筆，該 frame 的 metadata 拿到 4 個 frame 之後的時間戳（之後的 frame 不受影響）。前端 `reg_fifo` 滿時不寫入，SOF 遺失 | 一個 VP 累積超過 4 個未送 metadata 的 frame | R | 寫指標追上讀指標時設溢位旗標到狀態暫存器 |
 | DP-11 | 低 | `dp_pkt_top` | 同一個 VP 被多個 host 的 `vp_mask` 選中時只送給編號最大的 host | 軟體設定重疊的 `vp_mask` | R | 文件化為非法設定，或在設定時偵測並回報 |
-| DP-12 | 中 | `flow`（host + RTL） | buffer 環不能跨 8 GB 對齊邊界，`VA[32:0]` 會回捲 | host 配置的 buffer 跨過 8 GB 邊界 | R + I | host 配置時檢查；或 RTL 把 page 位址擴到完整寬度 |
+| DP-12 | 中 | `flow`（host + RTL） | buffer 環不能跨 8 GB 對齊邊界：RTL 位址是 26-bit page 運算，`VA[63:33]` 固定取 `DP_PAGE_MSB[31:1]`，跨界時 `VA[32:0]` 回捲；host 只檢查最高 page 編號放得進 32 bit | host 配置的 buffer 跨過 8 GB 邊界（取決於執行時配置到的位址） | R + X | host 配置時檢查；或 RTL 把 page 位址擴到完整寬度 |
 | DP-13 | 低 | `eth_pkt` | 逾時恢復時 MAC 送出「停住那一刻的封包開頭 + 仲裁器當下封包的後半段」接成的一個 frame | 某個輸入源或 MAC 在封包中途停住超過逾時 | R | 逾時時補送 `tlast` 並標記錯誤（`tuser`），恢復後從封包邊界開始 |
 | DP-14 | 低 | `roce_icrc` / `lfsr_hc` | 只支援固定幾種最後一拍長度；沒有方程式的資料寬度靜默不算 CRC | 改 header 長度（GRH 等）或新增 HIF 寬度 | R + N | 加 elaboration 期檢查（`$error`），不支援的組合直接編譯失敗 |
 | DP-15 | 中（S10） | `rx_parser` | n 拍封包讀出需要 n + 1 拍；512-bit / 201.42 MHz 時連續短封包的讀出比 100G 線速慢，輸入緩衝逐漸填滿，接著觸發 DP-1、DP-2 | Terasic S10，100G 連續收到 2 KB 以下的封包：60 byte 約 108 個、1500 byte 約 720 個之後溢位 | R + M | 讀出改成背靠背（`eop` 同拍讀下一筆 metadata），或提高 HIF 時脈 |
@@ -62,7 +62,7 @@
 | CP-3 | 低 | `rx_ls_parser`（ECB） | `cmd_dout` 跨時脈沒有同步器 | 合成約束不完整 | R | 加 `set_max_delay -datapath_only` 或改用 `reg_cdc` |
 | CP-4 | 低 | `bootp` | 任何送到 UDP 12268 的 BOOTP reply 都會改 IP，沒有 xid / chaddr 檢查 | 網路上有其他 BOOTP server 或惡意封包 | R | 比對 xid 與 chaddr |
 | CP-5 | 低 | `rx_ls_parser` | 所有 host 埠共用一個 `rx_ls_parser`：輸入以封包為單位 round-robin（`u_inp_axis_arb`），ECB / ARP / BOOTP 引擎與輸出仲裁（`u_out_axis_arb`）都只有一份，一個埠的長 `WR_BLOCK` 會擋住其他埠的 ARP / Ping | 多 host 埠同時使用 | R | 每埠一個輸出緩衝，或把 ECB 與 ARP / ICMP 分開 |
-| CP-6 | 低 | `reg_cdc` | 握手進行中的更新會遺失 | 10 拍內連續寫同一個跨時脈暫存器（HSB 內 `apb_switch` 延遲已避免） | R + I | 只要上游保證間隔就不需改；新設計引用時注意 |
+| CP-6 | 低 | `reg_cdc` / `s_apb_reg` | 握手進行中的更新會遺失；`s_apb_reg` 所有控制暫存器共用 `reg_wdval` 觸發，所以連續寫同一區塊的**不同**暫存器也會遺失 | 兩次寫入間隔小於握手時間；`apb_switch` 保證 ≥ 16 個 APB 時脈，只在模組時脈低於約 0.48 倍 APB 時脈時不足（例如 S10 上低於 48 MHz 的 SIF 時脈） | R + M | 每個暫存器只在自己被寫入時觸發，或改用帶 FIFO 的 CDC |
 
 ### PTP 與時間
 
@@ -74,7 +74,7 @@
 | PT-4 | 低 | `ptp` | P2P / gPTP 不支援 one-step Pdelay_Resp | 鄰居使用 one-step | R | 收到 one-step 時從 Pdelay_Resp 的 correctionField 取 turnaround |
 | PT-5 | 低 | `ptp` | Delay 量測與 Sync 之間沒有配對，用最近一次 Sync 的值 | Sync 與 Delay_Req 交錯且延遲變動 | R | 記錄 Delay_Req 送出時對應的 Sync sequenceId |
 | PT-6 | 低 | `ptp` | 秒只有 32 bit，2106 年回捲 | — | R | — |
-| PT-7 | 低 | `streaming_cdc` | HIF 端的 PTP 時間固定晚約 20–40 ns，沒有補償 | 需要 < 50 ns 精度的應用 | R + I | 在 HIF 端加上固定補償值（可由暫存器設定） |
+| PT-7 | 低 | `streaming_cdc` | HIF 端的 PTP 時間固定晚 3–4 個 HIF 時脈（10G 板級 19.2–25.6 ns、S10 14.9–19.9 ns、PYNQ 9.3–12.4 ns），再加最多 1 個 PTP 時脈的取樣保持；沒有補償 | 需要數十 ns 以下精度的應用 | R | 在 HIF 端加上固定補償值（可由暫存器設定） |
 
 ### Bridge（本 repo 沒有板級啟用）
 
@@ -103,11 +103,12 @@
 | PE-7 | 中 | `eeprom_info` | EEPROM 不存在時 MAC 變成 I2C 資料緩衝 RAM 的上電內容（多數 FPGA 為 0），不保留預設 `CA:FE:C0:FF:EE:00`；`eeprom_info` 不檢查 NACK | 板子沒有 EEPROM 或 EEPROM 沒回應 | R | 輪詢完成後檢查 `status[3]`（NACK），NACK 時保留預設值並設錯誤旗標 |
 | PE-8 | 低 | `eeprom_info` | CRC 計算跳過 byte 255 又檢查是否為 0，正確燒錄的 EEPROM 約 99.6 % 判為錯誤；`eeprom_crc_err` 沒有接 | 每次開機 | R + X + N | 見 [F-1](#f-1eeprom-crc) |
 | PE-9 | 低 | `i2s_clk_gen` | `CTRL2 = 8`、`CTRL2 ∉ 1–8`、`mclk_div ≤ 1` 時 BCLK 不動 | 軟體設定超出範圍 | R | 見 [F-10](#f-10i2s-除數) |
-| PE-10 | 低 | `i2s_serdes` | PCM 格式等同 LJ；RX 的 L / R 沒有標記，溢位後可能左右對調；`i_rx_ready` 沒有使用 | 使用 PCM / 溢位 | R + I | 實作 DSP 短 frame sync；RX 輸出加聲道位元（例如 `tuser`） |
+| PE-10 | 低 | `i2s_serdes` / `i2s_axis_buffer_rx` | PCM 格式等同 LJ；RX 的 L / R 沒有標記，RX 緩衝 almost full 時樣本不寫入（`i_rx_ready` 沒有使用），丟掉奇數個樣本後左右對調直到 reset | 使用 PCM / RX 溢位 | R | 實作 DSP 短 frame sync；RX 輸出加聲道位元（例如 `tuser`），或溢位時成對丟棄 |
 | PE-11 | 低 | `ram_player` | `timer = 0` 時不循環；`window_size < W_KEEP` 時沒有 `tlast`；中途停止時收尾拍可能未被接受就撤回 | 測試設定 | R | 循環條件只看 `loop_dis`；`DONE` 時保持 `tvalid` 直到 `tready` |
 | PE-12 | 低 | `imu_top` | `axis_buffer` 輸入不看 `tready`，下游反壓時遺失；每 frame 多 1 個樣本 | 使用 `imu_top`（目前沒有板級使用） | R | 接上 `tready`；比較改成 `samples_per_frame − 1` |
 | PE-13 | 低 | `delayed_io` | 取消與立即設定不會停止計數器；計數中送出的新延遲操作在舊的到期時間執行 | 取消後馬上重新排程 | R | 計數器加 `cancel` 輸入，或新要求時重新載入計數 |
 | PE-14 | 低 | `delayed_io` | CPNX100 用預設 `CLK_FREQ`，`CYCLES_PER_US` 進位成 20，延遲多 2.4 % | 需要精確延遲 | R | 板級傳入實際 APB 頻率，並用定點數換算 |
+| PE-15 | 低 | `i2s_top`（host + RTL） | host 讀 I2S 狀態用 `I2S_APB + 0x24`–`0x30`，RTL（`W_OFST = 12`）的狀態區在 `0x800`；host 的讀取得到 `pslverr` / ECB 回應碼 0x03，`clock_locked()`、`tx_underrun()`、`rx_overrun()` 都無法正常運作 | CPNX100 使用 I2S | R + X | host 改用 `0x800`–`0x80C`；或 `i2s_top` 傳 `W_OFST = 8` 並把 host 位址改為 `0x80` 起 |
 
 ### 註解與死碼（不影響功能）
 
