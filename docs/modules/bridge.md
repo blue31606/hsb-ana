@@ -98,7 +98,7 @@ two-step 透明時鐘：把 Sync 與 Delay_Req 在 bridge 內停留的時間（r
 ## 注意事項
 
 1. 未知 unicast 一律丟棄；CAM 沒有老化與刪除，裝置更換 MAC 後要 reset 才能重新學習。
-2. correctionField 的修正是用 `axis_mask` 的 **OR**（`OP = "OR"`），不是加法。只有在原本的 correctionField 對應位元為 0 時結果才等於相加；master 送來的 correctionField 不為 0 時，修正值會出錯（推斷，需以實際封包驗證）。
+2. correctionField 的修正是用 `axis_mask` 的 **OR**（`OP = "OR"`），不是加法。只有在原本的 correctionField 對應位元為 0 時結果才等於相加；master 送來的 correctionField 與修正值有任何相同位元為 1 時，結果就錯（R，v7.1：`axis_mask` 的 OR 分支是 `o_axis_tx_tdata |= mask`；`axis_mask` 只有 OR / AND，沒有加法）。
 3. `rx_parser` 帶 VLAN 的 PTP 封包，messageType 從錯誤的 byte 讀出（見 [rx_parser 注意事項 3](rx_parser.md#注意事項)），會影響這裡的 PTP 類型編碼。
 4. residence time 只用 16 bit 拍數計：在 156.25 MHz 時超過約 419 µs 會回捲；奈秒值只保留 24 bit。
 5. host 端 Sync 的 residence time 一律量到 **SIF 0** 送出為止；Sync 被送往其他 SIF 埠時也用這個值。

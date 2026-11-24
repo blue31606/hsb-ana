@@ -163,6 +163,10 @@ HIER = {
         ("fpga/nv_hsb_ip/rx_parser/rx_parser.sv", r"axis_buffer\s*#[\s\S]*?\)\s*u_axis_inp_buffer\s*\(", None),
         ("fpga/nv_hsb_ip/lib_axis/axis_buffer.sv", r"logic\s*\[[^\]]*\]\s*in_pkt_cnt\s*;", None),
         ("fpga/nv_hsb_ip/lib_axis/axis_buffer.sv", r"logic\s*\[[^\]]*\]\s*out_pkt_cnt\s*;", None)],
+    "u_dut.gen_pack_inst[0].packetizer_top_inst.o_axis_tvalid": [
+        ("fpga/nv_hsb_ip/packetizer/packetizer_top.sv", r"output\s+(?:logic\s*)?\[[^\]]*\]\s*o_axis_tvalid\s*,", None),
+        ("fpga/nv_hsb_ip/packetizer/packetizer_top.sv", r"output\s+(?:logic\s*)?\[[^\]]*\]\s*o_axis_tlast\s*,", None),
+        ("fpga/nv_hsb_ip/packetizer/packetizer_top.sv", r"input\s+(?:logic\s*)?\[[^\]]*\]\s*i_axis_tready\s*[,)]", None)],
     "u_dut.u_eeprom_info.eeprom_dval": [
         ("fpga/nv_hsb_ip/sys_init/eeprom_info.sv", r"output\s+eeprom_dval", None)],
     "i_eeprom_model.eeprom_sda_drive": [
@@ -189,7 +193,11 @@ def check_system(up):
              "host2sen_psn", "hif_tx_sem", "i_sif_axis_tready", "i_sif_tx_clk", "o_sif_axis_tvalid",
              "o_sif_axis_tdata", "o_sif_axis_tkeep", "o_sif_axis_tlast", "i_hif_axis_tvalid",
              "i_hif_axis_tdata", "i_hif_axis_tkeep", "i_hif_axis_tlast", "i_hif_axis_tuser",
-             "SIF_TX_WIDTH", "SIF_TX_BUF_SIZE"]
+             "SIF_TX_WIDTH", "SIF_TX_BUF_SIZE",
+             # v7.1 tests
+             "SIF_RX_VP_COUNT", "SIF_RX_PACKETIZER_EN", "SIF_RX_WIDTH", "SIF_RX_VP_SIZE",
+             "SIF_RX_SORT_RESOLUTION", "SIF_RX_NUM_CYCLES", "pack_vp_ram_index",
+             "PACK_OFF_RAM_ADDR", "PACK_OFF_RAM_DATA", "REG_PACK_CTRL_BASE"]
     extra = re.findall(r"//\s*tb-names:\s*(.*)", svh.read_text())
     for line in extra:
         names += line.split()

@@ -1,8 +1,9 @@
 // Directed unit test for nv_hsb_ip/uart/uart.sv receive path (issue PE-3).
 // A behavioral transmitter sends N back-to-back 8N1 frames (no idle between
 // frames) at the nominal baud rate scaled by (1 + ERR_PPM * 1e-6). The test
-// checks that every byte is received. With the RTL at 41cecaa, a positive
-// ERR_PPM (sender faster than HSB) is expected to lose framing.
+// checks that every byte is received. With the RTL at 41cecaa, ERR_PPM >= 116
+// (sender faster than HSB by about one clock per frame at BAUD_DIV = 107) is
+// expected to lose framing; tools/model/uart_rx_model.py gives the threshold.
 //
 // DRAFT: not compiled. Run once per +ERR_PPM=<n>, e.g. -20000, 0, 5000, 20000.
 //   vcs -sverilog tb_uart_rx_rate.sv $HSB/fpga/nv_hsb_ip/uart/uart.sv

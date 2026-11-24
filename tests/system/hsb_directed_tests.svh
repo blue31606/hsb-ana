@@ -515,3 +515,64 @@ task automatic dt_eeprom_absent_check(output bit pass);
     release i_eeprom_model.eeprom_sda_drive;
     dt_report("eeprom_absent", pass);
 endtask
+
+`ifdef SENSOR_RX_IF_INST
+// ---------------------------------------------------------------------------
+// T13 (DP-8, v7.1): a VP that no host serves must not stop the other VPs of
+// the same sensor. Sensor 0's pattern is the pass-through one, written into
+// both the VP 0 and the VP 1 fields of the VP RAM (field width
+// CTRL_WIDTH_VP = $clog2(DIN/VP_SIZE) + 1, VP v at bits [v*W +: W]), so VP 1
+// receives a copy of every word. Host 0's vip_mask keeps only VP 0 (the
+// default), so nothing ever reads VP 1. Counts frame ends leaving VP 0.
+// Needs SENSOR_RX_IF_INST, SIF_RX_VP_COUNT[0] >= 2 and a packetizer with
+// VP_SIZE < DIN (skipped otherwise). nframes x frame size must exceed the
+// VP FIFO (about two packets of payload) for the stall to happen.
+// Expected FAIL at 41cecaa: once VP 1's FIFO is almost full, pack_tready
+// (shared by all VPs) stays 0, the sensor input stops and VP 0 stops too.
+// Leaves sensor 0 stalled; run it last or reset afterwards.
+// ---------------------------------------------------------------------------
+int dt_vp0_frames = 0;
+always @(posedge hif_clk)
+    if (u_dut.gen_pack_inst[0].packetizer_top_inst.o_axis_tvalid[0] &&
+        u_dut.gen_pack_inst[0].packetizer_top_inst.o_axis_tlast[0] &&
+        u_dut.gen_pack_inst[0].packetizer_top_inst.i_axis_tready[0])
+        dt_vp0_frames++;
+
+task automatic dt_vp_unserved_stall(input int nframes, output bit pass);
+    int          din_width, vp_size, slices, w, vp_ram, before;
+    logic [31:0] pack_base, field;
+    if (SIF_RX_VP_COUNT[0] < 2 || !SIF_RX_PACKETIZER_EN[0] ||
+        SIF_RX_VP_SIZE[0] >= SIF_RX_WIDTH[0]) begin
+        $display("  skipped: sensor 0 needs >= 2 VPs and a slicing packetizer");
+        pass = 1;
+        dt_report("vp_unserved_stall", pass);
+        return;
+    end
+    din_width = SIF_RX_WIDTH[0];
+    vp_size   = SIF_RX_VP_SIZE[0];
+    slices    = din_width / vp_size;
+    w         = $clog2(slices) + 1;
+    program_packetizer_passthrough(0);                 // clear RAMs + VP 0 field
+    pack_base = REG_PACK_CTRL_BASE;                    // sensor 0
+    vp_ram    = pack_vp_ram_index(din_width, SIF_RX_SORT_RESOLUTION[0], SIF_RX_NUM_CYCLES[0]);
+    for (int e = 0; e < slices; e++) begin
+        field = 32'((e << 1) | 1);                     // {select = e, commit = 1}
+        ecb_write(pack_base + PACK_OFF_RAM_ADDR, 32'((vp_ram << 4) | e));
+        ecb_write(pack_base + PACK_OFF_RAM_DATA, field | (field << w));   // VP 0 and VP 1
+    end
+    before = dt_vp0_frames;
+    fork
+        for (int f = 0; f < nframes; f++) send_sensor_frame(0, f);
+        begin
+            repeat (2_000_000) @(posedge hif_clk);
+            $display("  timeout: sensor input stalled");
+        end
+    join_any
+    disable fork;
+    repeat (20_000) @(posedge hif_clk);
+    pass = (dt_vp0_frames - before == nframes);
+    $display("  frames sent %0d, frame ends on VP 0 %0d (expect %0d)",
+             nframes, dt_vp0_frames - before, nframes);
+    dt_report("vp_unserved_stall", pass);
+endtask
+`endif // SENSOR_RX_IF_INST

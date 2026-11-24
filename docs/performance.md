@@ -1,6 +1,6 @@
 # 效能分析
 
-本章從 RTL 參數與行為推算 HSB 的頻寬、效率、延遲與緩衝餘裕。**所有數字都沒有經過 HDL 模擬或硬體量測**；標「推斷」的項目牽涉多個模組的時序交互，誤差可能較大。§7（v7 新增）的數字來自照 RTL 逐暫存器重寫的 Python 逐拍模型，可信度介於讀 RTL 與模擬之間。資源使用量（LUT、BRAM）需要合成報告，本 repo 沒有，所以不在範圍內。
+本章從 RTL 參數與行為推算 HSB 的頻寬、效率、延遲與緩衝餘裕。**所有數字都沒有經過 HDL 模擬或硬體量測**；標「推斷」的項目牽涉多個模組的時序交互，誤差可能較大。§3 與 §7 的數字來自照 RTL 逐暫存器重寫的 Python 逐拍模型（v7.1 / v7），可信度介於讀 RTL 與模擬之間。資源使用量（LUT、BRAM）需要合成報告，本 repo 沒有，所以不在範圍內。
 
 ## 1. 介面頻寬
 
@@ -32,32 +32,44 @@ payload 由 host 依 `floor((MTU − overhead) / 128) × 128` 決定（overhead�
 
 host 預設 MTU 是 1500（見 [flow §注意事項](flow.md#注意事項)）。即使板級 `HOST_MTU = 4096`，沒有在 enumeration metadata 指定 `mtu` 時效率仍是 93.5 %。
 
-## 3. HSB 內部的封包間隔（推斷）
+## 3. HSB 內部的封包間隔（逐拍模型）
 
-`dp_pkt_top` 用一個 header FSM 服務所有 host 埠（[dp_pkt_top §5](modules/dp_pkt_top.md#5-header-fsm)），下一個封包的準備工作要等目前封包快結束（`hif_not_busy_soon`，剩不到 10 拍）才開始：
+`dp_pkt_top` 用一個 header FSM 服務所有 host 埠（[dp_pkt_top §5](modules/dp_pkt_top.md#5-header-fsm)），下一個封包的準備工作要等目前封包快結束（`hif_not_busy_soon`）才開始。v7.1 用 [`tools/model/dp_pkt_model.py`](../tools/model/dp_pkt_model.py) 把這段邏輯照 RTL 逐暫存器重寫（FSM、commit 握手、`hif_busy` / `hif_reserved` / `hif_sif_mask`、`dp_pkt` 的計數與 `near_pkt_end`、`dp_pkt_hdr` 與 header / payload 拼接），量測 `dp_pkt_top` 輸出（`dout`）上兩個資料封包之間的空拍。模型假設下游（`roce_icrc`、`eth_pkt`、MAC）永遠 ready、設定 RAM 沒有 APB 存取、VP 一直有資料、frame 很長（沒有 metadata 封包）；這些假設以外的部分沒有建模。
 
-| 步驟 | 約略拍數 |
+**一個封包的時間線**（`s` = `hif_not_busy_soon` 拉高的那一拍）：
+
+| 拍 | 事件 |
 |---|---|
-| `hif_not_busy_soon` 拉高（`near_pkt_end` 再打一拍） | 封包結束前約 8 拍 |
-| `IDLE → LOAD_STS → GRANT` | 3–4 |
-| `CALC` 從 `fsm_cnt = 2` 到 commit 點 7 | 5 |
-| `commit_arm` → `pkt_commit` | 2 |
-| 合計：從開始準備到 commit | 約 11 |
+| `s` | `dp_pkt` 剩 7 個 payload beat 要取（`(pkt_len − pkt_cnt) < 10` 再經 `near_pkt_end`、`hif_not_busy_soon` 兩級暫存） |
+| `s + 1 + d` | `sif_req` 拉高；`d` = 0–3，見下面的 `hif_sif_mask` |
+| `s + 2 + d` → `s + 9 + d` | `LOAD_STS`、`GRANT`、`CALC`（`fsm_cnt` 2 → 7，`DUMP_CLK_CYCLES = 7`） |
+| `s + 8` | 目前封包在 `dout` 的 `tlast` |
+| `s + 9` | `hif_busy = 0` |
+| `s + 10 + d` | `pkt_commit`（`commit_arm` 先暫存一拍） |
+| `s + 13 + d` | 下一個封包的第一個 header beat（`hdr_trigger` → `dp_pkt_hdr` 狀態機 → `axis_reg`） |
 
-所以兩個資料封包之間大約有 3 拍空檔（v7 沒有為 `dp_pkt_top` 建模：header FSM、設定 RAM 讀取延遲、`dp_pkt_hdr` 與 header / payload 拼接牽涉太多暫存器，這一節仍是推斷，需要模擬確認），`eth_pkt` 再加 1 拍（Data Plane 每個封包後強制讓出一拍，見 [eth_pkt §1](modules/eth_pkt.md#1-data-plane-間隔)）：
+所以空拍 = **4 + d** 拍。v6 估計的「約 3 拍 + `eth_pkt` 1 拍」相當於 d = 0 的情況。
 
-| HIF | MTU | 封包拍數（header + payload + ICRC） | 加上空檔 | HSB 端 payload 速率 | 線速上限 | 瓶頸 |
+**`hif_sif_mask` 的相位。** 每個 host 的 VP 公平性遮罩由三個暫存器串成（[dp_pkt_top.sv#L668–L688](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L668-L688)）：`hif_sif_unserved ← ~hif_sif_mask`、`hif_sif_served ← ~|hif_sif_unserved`、`hif_sif_mask ← served ? 0 : (mask | sif_gnt_r)`。只有一個 VP、`sif_gnt_r` 一直指向它時，這是三級反相的環，以 6 拍為週期振盪（3 拍遮住、3 拍放開）。`hif_not_busy_soon` 拉高時剛好被遮住，`sif_req` 就晚 1–3 拍（d）。封包週期是固定的，所以相位會鎖住，每個封包的 d 都一樣，取決於封包長度除以 6 的餘數（[DP-16](issues.md#data-plane-與封包處理)）。
+
+**單一 host、單一 VP、連續資料封包：**
+
+| HIF | MTU | `dout` 拍數（header + payload） | 穩態空拍 | 每包拍數 | HSB 端 payload 速率 | 線速上限 |
 |---|---|---|---|---|---|---|
-| 64 bit / 156.25 MHz | 1500 | 186 | 約 190 | 約 9.26 Gb/s | 9.35 Gb/s | 兩者接近，HSB 略低 |
-| 64 bit / 156.25 MHz | 4096 | 506 | 約 510 | 約 9.72 Gb/s | 9.76 Gb/s | 兩者接近 |
-| 512 bit / 201.42 MHz（S10） | 1500 | 24 | 約 28 | 約 81 Gb/s | 93.5 Gb/s | **HSB**：封包太短，FSM 的固定開銷佔比大 |
-| 512 bit / 201.42 MHz（S10） | 4096 | 64 | 約 68 | 約 94 Gb/s | 97.6 Gb/s | 兩者接近 |
+| 64 bit / 156.25 MHz | 1500 | 185 | 7 | 192 | 9.17 Gb/s | 9.35 Gb/s |
+| 64 bit / 156.25 MHz | 4096 | 505 | 5 | 510 | 9.73 Gb/s | 9.76 Gb/s |
+| 512 bit / 201.42 MHz（S10） | 1500 | 24 | 6 | 30 | **75.6 Gb/s** | 93.5 Gb/s |
+| 512 bit / 201.42 MHz（S10） | 4096 | 64 | 4 | 68 | 94.0 Gb/s | 97.6 Gb/s |
+
+64 bit 時 ICRC 在最後一拍放不下，`roce_icrc` 要多送一拍；這裡假設它落在空拍裡，不增加週期（`roce_icrc` 沒有建模）。
+
+**兩個 host、各一個 VP、同時滿載：** 每個 host 每 189 / 509 / 28 / 68 拍送一個封包，也就是兩個 host 同時達到上表 d = 0 的速率（512 bit、MTU 1500 時各 81.0 Gb/s）。VP 輪流被授權時，各 host 的遮罩不再以單一 VP 的方式振盪，d 為 0；FSM 處理一個封包約佔 14 拍，兩個 host 剛好排得下。v6 寫的「兩埠無法同時達到線速」不成立（在上述假設下）。
 
 結論：
 
-- 10G 板級在任何 MTU 下都接近線速。
-- 100G 板級要用大 MTU 才能接近線速，MTU 1500 時大約只有 80 Gb/s。
-- `HOST_IF_INST = 2` 且兩個埠同時滿載時，FSM 必須輪流服務。每個封包約佔 FSM 12–15 拍，512-bit、MTU 1500 時兩個埠合計需要的 FSM 時間超過封包本身的長度，兩埠無法同時達到線速。
+- 10G 板級在任何 MTU 下都接近線速；MTU 1500 時 HSB 略低（9.17 vs 9.35 Gb/s）。
+- 100G 板級在 MTU 1500 時，單一 VP 只有約 76 Gb/s，兩個 VP / host 時約 81 Gb/s；要接近線速需要大 MTU。
+- 這些數字不含 `roce_icrc` 與 `eth_pkt` 的行為；兩者若在封包之間再加拍數，速率會更低。
 
 ## 4. 感測器端
 
@@ -79,7 +91,7 @@ host 預設 MTU 是 1500（見 [flow §注意事項](flow.md#注意事項)）。
 | packetizer 管線 | `latency` + 排序網路約 `PACK_PIPE_COUNT + 3` 拍（CPNX100：約 8 個 SIF 時脈） | [packetizer §4](modules/packetizer.md#4-可程式化資料路徑packetizersv) |
 | VP FIFO 跨時脈 | `dc_fifo` 同步約 3–4 拍 | |
 | **VP 輸出閘控** | FIFO 累積到 `AE_FLAG`（約一個封包的 payload）或看到 frame 結尾才放行 | [packetizer §6](modules/packetizer.md#6-virtual-portvirtual_portsv) |
-| header FSM | 約 11 拍 | §3 |
+| header FSM | `hif_not_busy_soon` 之後 13–16 拍出第一個 header beat（與前一個封包重疊） | §3 |
 | 傳送一個封包 | 64-bit、MTU 1500：186 拍 ≈ 1.2 µs | |
 
 主要延遲來自 VP 輸出閘控：以 10 Gb/s 的感測器速率計算，累積 1.4 KB 需要約 1.1 µs。感測器越慢，這段等待越長（例如 1.33 Gb/s 時約 8.5 µs）。這是為了保證 `dp_pkt` 取資料時不斷流（[dp_pkt_top §1](modules/dp_pkt_top.md#1-輸入契約)）而付出的代價。

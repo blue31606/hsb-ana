@@ -222,9 +222,9 @@ FIFO 大小（[L24–L30](https://github.com/nvidia-holoscan/holoscan-sensor-bri
 ## 注意事項
 
 1. 暫存器的 `s_apb_reg` 跨到 SIF 時脈（`i_pclk = i_sclk`），不是 HIF。
-2. **`latency` 是 4 bit，但 `latency_cnt` 只有 3 bit**（[L117](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L117)）。`latency ≥ 9` 時 `latency_cnt == latency − 1` 永遠不成立，FSM 會停在 `WAIT` / `WAIT2`，串流卡住（推斷；host 軟體只用 latency 1）。合法範圍實際上是 0–8。
+2. **`latency` 是 4 bit，但 `latency_cnt` 只有 3 bit**（[L117](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L117)）。`latency ≥ 9` 時 `latency_cnt == latency − 1` 永遠不成立，FSM 會停在 `WAIT` / `WAIT2`，串流卡住（R：`latency = 9` 時 `latency − 1 = 8` 超出 3-bit 計數的最大值 7；host 軟體只用 latency 1）。合法範圍實際上是 0–8。
 3. `PACK_DELAY` 狀態沒有進入路徑，是死碼。
 4. 串流進行中寫設定 RAM 會改變列號與 `ld_shift`，打亂當前 line 的排程；應在串流停止時設定。
-5. `last_buf` 只追蹤 VP 0 的輸出。只用 VP 1 以上（例如 `tuser[3:2]` 分流且 VP 0 沒有流量）時，2 個 frame 之後 `last_tready` 會一直為 0（推斷）。
+5. `last_buf` 只追蹤 VP 0 的輸出。只用 VP 1 以上（例如 `tuser[3:2]` 分流且 VP 0 沒有流量）時，`last_buf` 每個 frame 加 1、從不減少，2 個 frame 之後 `last_tready` 一直為 0，`o_axis_tready = last_tready & buf_rd_req`（[L598](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/packetizer/packetizer_top.sv#L598)）讓 SIF 輸入永久停住（R，v7.1 確認）。
 6. bypass 模式且 `VP_SIZE < DIN_WIDTH` 時，每個 beat 只保留低 `VP_SIZE` bit（見 §4）。
 7. VP FIFO 不背壓，溢位保護靠 `almost_full` 提前停讀；若 `dp_pkt_top` 長時間不讀某個 VP，該 SIF 的輸入會被整個停住（所有 VP 共用 `pack_tready`）。

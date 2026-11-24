@@ -11,7 +11,7 @@
 | **A** | `tools/gen_regmap.py` 自動解析 | 很高（對 `regmap_pkg.sv` 的內容而言） |
 | **I** | 推斷：從結構或部分程式碼推論，沒有逐行追完 | 中；文件中標「推斷」 |
 | **N** | 數值驗證：`tools/verify/verify_calcs.py` 照 RTL 重寫運算，與獨立參考實作比對（[結果](docs/verification-calcs.md)） | 很高（只限運算本身，不含時序） |
-| **M** | 逐拍模型：`tools/model/rx_parser_model.py` 照 RTL 逐暫存器重寫一段邏輯的時序行為，餵入流量重現結論（[結果](docs/performance.md#7-rx_parser-讀出能力逐拍模型)） | 高，介於讀 RTL 與模擬之間：模型本身是人工轉寫，可能和 RTL 有出入；腳本的對照組與各項預期會在不符時失敗 |
+| **M** | 逐拍模型：`tools/model/` 下的腳本照 RTL 逐暫存器重寫一段邏輯的時序行為，餵入流量重現結論：`rx_parser_model.py`（[結果](docs/performance.md#7-rx_parser-讀出能力逐拍模型)）、`dp_pkt_model.py`（[結果](docs/performance.md#3-hsb-內部的封包間隔逐拍模型)）、`uart_rx_model.py`、`roce_ack_model.py`（封包層級） | 高，介於讀 RTL 與模擬之間：模型本身是人工轉寫，可能和 RTL 有出入；每個腳本都列出建模範圍與假設，預期不符時失敗 |
 
 ## 架構與位址
 
@@ -65,25 +65,25 @@
 | `rx_parser` 輸入 FIFO 溢位時 beat 遺失，`in_pkt_cnt` 仍計入被丟的 `tlast`，之後資料與 metadata 永久錯開（v7：由 I 升為 R + M） | R + M | [rx_parser 注意事項](docs/modules/rx_parser.md#注意事項)、[lib](docs/modules/lib.md#axis_buffer) |
 | `rx_parser` metadata FIFO 比資料 FIFO 先滿，三個 metadata FIFO 各自丟（v7：由 I 升為 R + M） | R + M | [rx_parser 注意事項](docs/modules/rx_parser.md#注意事項) |
 | `rx_parser` 背靠背讀出每個封包多 1 拍（v6 寫 2 拍）；Terasic S10 在 100G 下連續短封包會溢位（DP-15，v7 新增） | R + M | [performance §7](docs/performance.md#7-rx_parser-讀出能力逐拍模型) |
-| `roce_ack` 與 `sensor_tx_pkt_proc` 的 QP 位元範圍不同；PSN 比較不處理回捲 | R（影響為 I） | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
+| `roce_ack` 與 `sensor_tx_pkt_proc` 的 QP 位元範圍不同；PSN 比較不處理回捲（v7.1：回捲兩個方向的錯誤分類以模型重現） | R + M | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
 | 多個 SIF TX 只有 sensor 0 的 pause quanta 有效 | R | [tx_stream_buffer 注意事項](docs/modules/tx_stream_buffer.md#注意事項) |
 | `eth_pkt` 逾時恢復時 MAC 收到兩個封包接成的 frame（v7：由 I 升為 R） | R | [eth_pkt 注意事項](docs/modules/eth_pkt.md#注意事項) |
 | `dp_pkt_len` reset 值只用低 8 bit，必須由軟體設定 | R | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
 | `dpll.sv` 增益註解與實際（暫存器決定）不符；offset 只取 24 bit；Delay 量測與 Sync 之間沒有配對 | R | [ptp 注意事項](docs/modules/ptp.md#注意事項) |
 | PTP 沒有 BMCA、忽略 Announce；correctionField 只用 24 bit（mod 2²⁴，負值正確、超過 ±8.4 ms 回捲）；不支援 one-step Pdelay_Resp；秒只有 32 bit | R | [ptp 注意事項](docs/modules/ptp.md#注意事項) |
-| packetizer `latency ≥ 9` 時 FSM 卡死（`latency_cnt` 只有 3 bit）；`PACK_DELAY` 是死碼；串流中寫 RAM 會打亂排程；`last_buf` 只看 VP 0 | R（影響為 I） | [packetizer 注意事項](docs/modules/packetizer.md#注意事項) |
+| packetizer `latency ≥ 9` 時 FSM 卡死（`latency_cnt` 只有 3 bit）；`PACK_DELAY` 是死碼；串流中寫 RAM 會打亂排程；`last_buf` 只看 VP 0，只用 VP 1 以上時 2 個 frame 後 SIF 輸入永久停住（v7.1：影響由 I 升為 R） | R | [packetizer 注意事項](docs/modules/packetizer.md#注意事項) |
 | `dp_pkt` 不檢查 VP `tvalid`；`ROCE_WR_IMM` 是死碼；`dp_pkt_1722B` 暫存器沒有使用；RTL 檔頭的設定 RAM 註解過時；CoE timestamp 是送出時間 | R | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
-| I2C 10-bit 讀取不符規格；`status[2]` 實為逾時；高 APB 時脈板級上 SCL 超過 400 kHz | R + I | [peripherals 注意事項](docs/modules/peripherals.md#注意事項) |
+| I2C 10-bit 讀取不符規格（v7.1：對照 I2C 規格的 Sr 後格式，R）；`status[2]` 實為逾時；host 的 `set_i2c_clock()` 不分板級寫 `0x19`，高 APB 時脈板級上 SCL 超過 400 kHz（v7.1：R + X） | R + X | [peripherals 注意事項](docs/modules/peripherals.md#注意事項) |
 | UART 註解寫 16x oversampling，參數是 8 | R | [peripherals §UART](docs/modules/peripherals.md#uart) |
 | `cam_rcvr` 不能反壓相機，HSB 停止接收約 4 µs 後資料遺失 | R + I | [performance §6](docs/performance.md#6-緩衝與反壓鏈) |
 | buffer 環不能跨 8 GB 邊界；host 預設 MTU 1500 | R + X + I | [flow 注意事項](docs/flow.md#注意事項) |
-| 512-bit HIF、MTU 1500 時 Data Plane 約 80 Gb/s，達不到 100G 線速 | I | [performance §3](docs/performance.md#3-hsb-內部的封包間隔推斷) |
-| Bridge 透明時鐘用 OR 而不是加法修正 correctionField；CAM 沒有老化 | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
+| Data Plane 封包間隔 4 + d 拍（d = 0–3，`hif_sif_mask` 相位）；512-bit、MTU 1500 時單一 VP 75.6 Gb/s、兩個 host 各 81.0 Gb/s；兩個 host 可同時達到單一 host 的速率（v7.1：由 I 升為 R + M，並更正「兩埠無法同時達到線速」） | R + M | [performance §3](docs/performance.md#3-hsb-內部的封包間隔逐拍模型) |
+| Bridge 透明時鐘用 OR 而不是加法修正 correctionField（v7.1：`axis_mask` 的 OR 分支為 `tdata |= mask`，且沒有加法選項）；CAM 沒有老化 | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
 | `lib` 中 `axis_demux`、`comparator`、`debouncer`、`str_fwd_fifo` 沒有被引用 | R | [lib](docs/modules/lib.md) |
 | `imu_top` 沒有被任何板級實例化 | R | [ref_design](docs/modules/ref_design.md) |
-| ECB 封包在 pair 中途結束仍執行一次 APB 存取；單組 `WR_BLOCK` 被補齊時可能多寫一次 `glb_scratch` | R + I | [rx_ls_parser 注意事項](docs/modules/rx_ls_parser.md#注意事項) |
-| ECB `cmd_dout` 跨時脈沒有同步器；BOOTP reply 沒有 xid / chaddr 驗證；LS 路徑所有 host 埠共用，會互相阻擋 | R + I | 同上 |
-| `roce_ack`：重複封包不回 ACK；IPv4 checksum 增量更新在借位時差 2（N）；第一個 ACK 的 PSN 為 0 | R + I + N | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
+| ECB 封包在 pair 中途結束仍執行一次 APB 存取；host 預設 `block_enable = 1`，每一次單一暫存器寫入都是單組 `WR_BLOCK`，被補齊後多寫一次 `glb_scratch`（v7.1：由 R + I 升為 R + X） | R + X | [rx_ls_parser 注意事項](docs/modules/rx_ls_parser.md#注意事項) |
+| ECB `cmd_dout` 跨時脈沒有同步器；BOOTP reply 沒有 xid / chaddr 驗證（R + I）；LS 路徑所有 host 埠共用：輸入 round-robin、各引擎與輸出仲裁只有一份（v7.1：R） | R（`cmd_dout` 約束為 I） | 同上 |
+| `roce_ack`：重複封包不回 ACK、第一個 ACK 的 PSN 為 0（v7.1：模型重現，兩者合起來第一個封包的重送永遠沒有回應）；IPv4 checksum 增量更新在借位時差 2（N）；板級都沒有定義 `SIF_TX_ROCE_RC_ENABLE`，host 軟體只送 UC SEND（X） | R + M + N + X | [roce_ack 注意事項](docs/modules/roce_ack.md#注意事項) |
 | `reg_cdc` 在握手進行中的更新會遺失（HSB 內由 `apb_switch` 的 10 拍延遲避免） | R + I | [lib §reg_cdc](docs/modules/lib.md#reg_cdc) |
 | `streaming_cdc` 讓 HIF 端的 PTP 時間固定晚約 20–40 ns，未補償 | R + I | [lib §streaming_cdc](docs/modules/lib.md#streaming_cdc) |
 | `dc_fifo` 實體深度補到 2 的次方；AUTO RAM 判斷條件前後不一致 | R | [lib §dc_fifo_generic](docs/modules/lib.md#dc_fifo_generic--dc_fifo_stub) |
@@ -91,17 +91,19 @@
 | Bridge：本 repo 沒有板級使用；只支援 Layer 2 PTP；一般 multicast 被丟棄；host 優先於 SIF | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
 | Bridge host RX 緩衝的 `o_axis_rx_tready` 沒接，64-bit 時大於約 1.8 KB 的封包讓該埠 bridge 路徑永久停擺；`rx_parser` 不受影響（v7：由 I 升為 R + M，並更正機制） | R + M | [bridge 注意事項 7](docs/modules/bridge.md#注意事項) |
 | `tx_stream_buffer` 溢位時逐 beat 丟棄、`tlast` 遺失時兩包合併；不會永久錯位（v7：由 I 升為 R） | R | [tx_stream_buffer 注意事項 2](docs/modules/tx_stream_buffer.md#注意事項) |
-| SPI 只讀交易與 `turnaround_len` ≥ 33 卡死；UART 接收端連續資料下可能失去同步 | R（UART 為 R + I） | [peripherals 注意事項](docs/modules/peripherals.md#注意事項) |
+| SPI 只讀交易與 `turnaround_len` ≥ 33 卡死；UART 接收端：對方快約每 frame 1 個時脈以上就失去同步、取樣點在 bit 的 0.626 處（v7.1：R + M） | R（UART 為 R + M） | [peripherals 注意事項](docs/modules/peripherals.md#注意事項) |
 | I2S 除數超出範圍時 BCLK 停止；PCM 等同 LJ；RX 聲道沒有標記 | R | [ref_design §i2s_top](docs/modules/ref_design.md#i2s_top) |
 | `ram_player` `timer = 0` 不循環、`window_size < W_KEEP` 沒有 `tlast`、中途停止違反 AXIS | R | [data_gen §ram_player](docs/modules/data_gen.md#ram_player) |
 | Bridge `del_req_val` 用錯 index；CAM 填滿後未命中送往 entry 0 | R | [bridge 注意事項](docs/modules/bridge.md#注意事項) |
 | 事件序列器 opcode `11` 不是 NOP | R | [event](docs/modules/event.md) |
 | `roce_ack` host QP RAM 只有 2 個 word；Bridge 學習請求可能遺失 | R | [roce_ack](docs/modules/roce_ack.md)、[bridge 注意事項](docs/modules/bridge.md#注意事項) |
 | `delayed_io` 取消不停止計數器；CPNX100 延遲多 2.4 % | R | [ref_design §delayed_io](docs/modules/ref_design.md#delayed_io) |
+| `dp_pkt_ts` 每 VP 4 筆時間戳 RAM 沒有滿的檢查，第 5 筆覆寫最舊一筆（v7.1：由 I 升為 R） | R | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
+| 單一 VP 時 `hif_sif_mask` 以 6 拍週期振盪，封包間隔多 0–3 拍（DP-16，v7.1 新增） | R + M | [dp_pkt_top 注意事項](docs/modules/dp_pkt_top.md#注意事項) |
 
 ## 時序圖
 
-`docs/timing/` 的五張圖都是**依 RTL 推導的示意**。訊號的先後順序與因果關係可信；確切拍數需要模擬確認。
+`docs/timing/` 的五張圖中，`rx_parser_readout` 自 v7.1 起由 `tools/model/rx_parser_model.py --wave` 產生（M）；其餘四張是**依 RTL 推導的示意**，訊號的先後順序與因果關係可信，確切拍數需要模擬確認。
 
 ## 版本修正
 
@@ -134,11 +136,15 @@
 | `rx_parser` 溢位後果 | v6 寫「封包邊界可能錯位」（推斷） | v7：`in_pkt_cnt` 計入被丟的 `tlast`，之後每個封包都配到前一包的 metadata，直到 reset |
 | Bridge host RX 緩衝 | v6 寫「almost full 時對 `rx_parser` 反壓，經 `rx_parser` 擋住同埠所有流量」 | v7：`o_axis_rx_tready` 沒接，沒有反壓；beat 被靜默丟棄，該埠 bridge 路徑停擺，`rx_parser` 不受影響 |
 | 測試草稿 S6 的巨集 | v6 寫 `+define+ENABLE_ROCE_ACK` | v7：`SIF_TX_ROCE_RC_ENABLE`（`ENABLE_ROCE_ACK` 是 `rx_parser` 的參數） |
+| `rx_parser` 封包收完到輸出 | v6 寫約 7 拍 | v7.1：8 拍（M） |
+| Data Plane 封包間隔 | v6 估約 3 拍 + `eth_pkt` 1 拍；「兩埠無法同時達到線速」 | v7.1：4 + d 拍（d = 0–3）；兩個 host 各一個 VP 時可同時達到單一 host 的速率（M） |
+| BR-2 修正建議 | v6 寫「用 `axis_mask` 的 `OP = "ADD"`」 | v7.1：`axis_mask` 只有 OR / AND，需要另加加法器 |
+| UART U2 測試預期 | v6 寫「`ERR_PPM` > 0 失敗」 | v7.1：約 116 ppm 以上才失敗（M） |
 
 ## 建議的下一步驗證
 
 1. 取得 VCS 或 Xcelium 後，跑 `fpga/nv_hsb_ip_simple_tb`（`make run TEST_MODE=SINGLE_SENSOR|ALL_SENSORS|HOST2SEN`、`make coe`），見 [testbench](docs/testbench.md)。
-2. 跑 [定向測試計畫](docs/test-plan.md) 的 U1–U3、S1–S12，確認 [問題清單](docs/issues.md) 中標 R / I / M 的項目；S11 同時驗證 `tools/model/rx_parser_model.py` 這個模型本身。之後再做 PTP master 模型、多 VP packetizer（DP-8）等需要新模型的測試。
+2. 跑 [定向測試計畫](docs/test-plan.md) 的 U1–U3、S1–S13，確認 [問題清單](docs/issues.md) 中標 R / I / M 的項目；S11 與 U2 同時驗證 `rx_parser_model.py`、`uart_rx_model.py` 這兩個模型本身。之後再做 PTP master 模型等需要新模型的測試。
 3. 用模擬波形取代 `docs/timing/` 的示意圖（v4 共 5 張）。
-4. 在硬體上量測 [performance](docs/performance.md) 的估算值，特別是 512-bit HIF 的封包間隔；`dp_pkt_top` 的 header FSM（§3）在 v7 仍是推斷，沒有建模。
+4. 在硬體上量測 [performance](docs/performance.md) 的估算值，特別是 512-bit HIF 的封包間隔；`dp_pkt_model.py` 沒有包含 `roce_icrc` 與 `eth_pkt`。
 

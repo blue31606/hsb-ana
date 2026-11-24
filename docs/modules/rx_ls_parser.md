@@ -185,7 +185,7 @@ host 軟體另外定義了 0x02、0x05、0x07–0x0A，RTL 沒有產生這些值
 |---|---|
 | 封包在 header 收完前結束 | `DCD_HDR` 看到 `tlast` → `DCD_DONE`：**不回應**、不執行 |
 | 封包在一組 pair 中途結束 | `DCD_DATA` 看到 `tlast` → `DCD_WAIT`：用不完整的 addr / data（`cmd_addr` / `cmd_dout` 只在 IDLE / FLUSH 清除，所以第一組以外的 pair，未收到的 byte 保留上一組的值；見注意事項 5）**仍然執行一次 APB 存取** |
-| 一般 ECB 的 pair 數 | 由 `tlast` 決定，不看 UDP length；Ethernet 最小長度補齊的 byte 會被當成下一組 pair 的開頭。例如 `WR_BLOCK` 只帶 1 組時封包被補到 60 byte，多出的 4 byte 會觸發一次位址不完整的額外存取（推斷） |
+| 一般 ECB 的 pair 數 | 由 `tlast` 決定，不看 UDP length；Ethernet 最小長度補齊的 byte 會被當成下一組 pair 的開頭。例如 `WR_BLOCK` 只帶 1 組時封包被補到 60 byte，多出的 4 byte 會觸發一次位址不完整的額外存取（R + X，見注意事項 5） |
 | RoCE-ECB 的 pair 數 | 由 `total_pairs = (udp_len − 38) >> 3` 決定，ICRC 不會被當成資料 |
 | RoCE-ECB 的 UDP length < 38 | `total_pairs` 下溢成很大的值；一般 ECB 不使用 `total_pairs`，不受影響 |
 
@@ -247,7 +247,7 @@ IP 來源：reset 時是預設 `192.168.0.2 + k`；之後**最後發生的事件
 2. `bootp` 的 IP 變數名為 `ciaddr`：它是送出 BOOTP request 時填在 ciaddr 欄位的「目前 IP」，收到 reply 時從 `yiaddr` 更新。命名與用途一致，不是錯誤（v3 的說明有誤）。
 3. LS 路徑吞吐量 = 1 byte / HIF 時脈。
 4. ECB 寫入命令預設沒有回應，host 需要確認寫入時必須設 `ACK_REQUEST`。
-5. 封包在 pair 中途結束時仍會執行一次不完整的 APB 存取。具體情境（推斷，未模擬確認）：host 的批次寫入（`write_uint32(WriteData&)`）一律用 `WR_BLOCK`；只帶 1 組時 UDP payload 14 byte，frame 56 byte，被 MAC 補到 60 byte。多出的 4 byte 0 會被當成第二組的 addr，`tlast` 隨即到來，FSM 以 `addr = 0x0000_0000`、`data = 上一組的資料`（`cmd_dout` 只在 IDLE / FLUSH 清除）執行一次寫入，也就是寫到 `glb_scratch`；回應也會多一組 pair。前提是板級 MAC 不移除補齊 byte，且封包沒有 VLAN。
+5. 封包在 pair 中途結束時仍會執行一次不完整的 APB 存取。具體情境（R + X，v7.1 確認 host 端；未模擬）：enumeration 預設 `block_enable = 1`（`enumerator.cpp`），此時 host 的 `write_uint32(address, value)` 也包成單組 `WriteData`，一律用 `WR_BLOCK`（[hololink.cpp#L562–L580](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/hololink.cpp#L562-L580)），所以**每一次單一暫存器寫入**都會觸發；只帶 1 組時 UDP payload 14 byte，frame 56 byte，被 MAC 補到 60 byte。多出的 4 byte 0 會被當成第二組的 addr，`tlast` 隨即到來，FSM 以 `addr = 0x0000_0000`、`data = 上一組的資料`（`cmd_dout` 只在 IDLE / FLUSH 清除）執行一次寫入，也就是寫到 `glb_scratch`；回應也會多一組 pair。前提是板級 MAC 不移除補齊 byte，且封包沒有 VLAN。
 6. 任何送到 UDP 12268、dest MAC 為本機的 BOOTP reply 都會改變 HSB 的 IP，沒有 xid / chaddr 驗證。
 7. `cmd_dout` 跨時脈沒有同步器，依賴「資料先固定、控制後同步」的時序；需要合成約束。
-8. `rx_ls_parser` 是所有 host 埠共用的單一路徑：一個長的 `WR_BLOCK` 在執行期間（每組都要 APB 往返）會擋住其他 host 埠的 ARP、BOOTP、Ping；輸出緩衝也是共用的，某個 host 埠的 `eth_pkt` 不收時會擋住其他埠的回應（推斷）。
+8. `rx_ls_parser` 是所有 host 埠共用的單一路徑：一個長的 `WR_BLOCK` 在執行期間（每組都要 APB 往返）會擋住其他 host 埠的 ARP、BOOTP、Ping；輸出緩衝也是共用的，某個 host 埠的 `eth_pkt` 不收時會擋住其他埠的回應（R，v7.1 確認：輸入 `u_inp_axis_arb` 以封包為單位 round-robin，各引擎與輸出仲裁 `u_out_axis_arb` 都只有一份）。

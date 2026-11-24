@@ -19,10 +19,14 @@ Modelled exactly (upstream commit 41cecaa):
                                FIFOs (L380-L420, L566-L585), hdr_ready / buf_axis_tready /
                                hdr_rden (L712-L726), w_buf_axis_tready (L737)
 
-Approximated (does not change steady-state throughput, only start-up latency):
-  axis_to_vec o_valid timing   header metadata written 2 cycles after the header-completing
-                               beat (axis_to_vec register + proc_pipeline[0]); IPv4 result
-                               4 cycles later (proc_pipeline[4]). +-1 cycle.
+  axis_to_vec / proc_pipeline   with i_done tied to 1 (rx_parser.sv L228) o_valid is a
+                               one-cycle pulse the cycle after the beat with cnt == D_CYCLES-1
+                               (A2V_WAIT, or early_pkt_r when tlast comes first); proc_pipeline[0]
+                               registers it, so hdr_buffer is written 2 cycles after that beat and
+                               ipv4_buffer 4 cycles later (proc_pipeline[4]) (v7.1: exact, was
+                               an approximation in v7)
+
+Approximated:
   MAC                          beats of one frame are contiguous; next frame starts when the
                                previous one has used its wire time (frame + FCS + 20 byte
                                preamble/IFG) at the given line rate.
@@ -30,7 +34,7 @@ Approximated (does not change steady-state throughput, only start-up latency):
 
 Usage:
   python3 tools/model/rx_parser_model.py            # run all scenarios
-  python3 tools/model/rx_parser_model.py --quiet    # summary lines only
+  python3 tools/model/rx_parser_model.py --wave docs/timing/rx_parser_readout.wave.json
 Exit code 1 if a scenario's expectation is violated.
 """
 import math
@@ -103,6 +107,7 @@ class RxParser:
         self.mismatch = 0
         self.first_mismatch = None
         self.out_pkts = []       # (pkt_id_of_metadata, pkt_id_of_data_eop, cycle of eop)
+        self.trace = None        # set to [] to record per-cycle signals
         self.bubbles = []        # cycles where buf_axis_tready = 1 but no beat is valid (mid-packet gap)
         self.cycle = 0
 
@@ -140,6 +145,14 @@ class RxParser:
                 self.out_pkts.append((self.cur_meta, self.r_beat[0], t))
         elif self.bt and not self.r_valid:
             self.bubbles.append(t)
+        if self.trace is not None:
+            ev_now = [f for f, _ in self.meta_events.get(t, [])]
+            self.trace.append(dict(
+                in_valid=in_beat is not None, in_last=bool(in_beat and in_beat[1]),
+                hdr_wr="hdr" in ev_now, fcs_wr="fcs" in ev_now, ipv4_wr="ipv4" in ev_now,
+                hdr_ready=self.hr, hdr_rden=hdr_rden, buf_tready=self.bt,
+                buf_tvalid=accept, buf_tlast=eop,
+                out_id=self.r_beat[0] if accept else None))
         # ---- clock edge ----
         wr = in_beat is not None
         self.data.step(wr, in_beat, rden)
@@ -265,6 +278,69 @@ def run_bridge(sizes, gap=12):
     return b
 
 
+def wave_json(path):
+    """Write docs/timing/rx_parser_readout.wave.json from a model trace: two back-to-back
+    10-beat packets at HOST_WIDTH = 64, readout not stalled."""
+    import json
+    rp = RxParser(64, 4096)
+    rp.trace = []
+    beats = {}
+    start = 1
+    for pid in range(2):
+        for i in range(10):
+            beats[start + i] = (pid, i == 9, False)
+            rp.schedule_meta(start, 10, pid)  if i == 0 else None
+        start += 10
+    for t in range(44):
+        rp.step(beats.get(t), False)
+    tr = rp.trace
+
+    def w(key):
+        out, prev = "", None
+        for c in tr:
+            v = "1" if c[key] else "0"
+            out += "." if v == prev else v
+            prev = v
+        return out
+
+    def data_wave():
+        out, labels, prev = "", [], "x"
+        for c in tr:
+            pid = c["out_id"]
+            cur = "x" if pid is None else pid
+            if cur == prev:
+                out += "."
+            elif pid is None:
+                out += "x"
+            else:
+                out += "="
+                labels.append(f"P{pid}")
+            prev = cur
+        return out, labels
+
+    dw, labels = data_wave()
+    spec = {
+        "title": "rx_parser：兩個背靠背 10-beat 封包（HOST_WIDTH=64），由 tools/model/rx_parser_model.py 逐拍模型產生",
+        "signal": [
+            {"name": "clk", "wave": "p" * len(tr)},
+            {"name": "i_axis_rx_tvalid", "wave": w("in_valid")},
+            {"name": "i_axis_rx_tlast", "wave": w("in_last")},
+            {"name": "hdr_buffer.wr (pp[0])", "wave": w("hdr_wr")},
+            {"name": "fcs_buffer.wr", "wave": w("fcs_wr")},
+            {"name": "ipv4_buffer.wr (pp[4])", "wave": w("ipv4_wr")},
+            {"name": "hdr_ready", "wave": w("hdr_ready")},
+            {"name": "hdr_rden", "wave": w("hdr_rden")},
+            {"name": "buf_axis_tready", "wave": w("buf_tready")},
+            {"name": "buf_axis_tvalid", "wave": w("buf_tvalid")},
+            {"name": "buf_axis_tlast", "wave": w("buf_tlast")},
+            {"name": "packet", "wave": dw, "data": labels},
+        ],
+    }
+    with open(path, "w") as f:
+        json.dump(spec, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
 FAILS = []
 
 
@@ -277,6 +353,9 @@ def check(name, ok, detail, quiet=False):
 
 def main():
     quiet = "--quiet" in sys.argv
+    if "--wave" in sys.argv:
+        wave_json(sys.argv[sys.argv.index("--wave") + 1])
+        return 0
 
     # 1. Readout cost per packet when backlogged: n beats + gap.
     gaps = {}

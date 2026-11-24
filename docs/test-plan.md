@@ -16,7 +16,7 @@
 | 測試 | 對應問題 | 層級 | 激勵 | 判斷 | 預期（`41cecaa`） |
 |---|---|---|---|---|---|
 | U1 `tb_spi_turnaround` | PE-2 | 單元 | 1 個命令 byte + turnaround `LEN` = 1、2、8、31、32、33、40、255 | `busy` 在合理時間內清除，turnaround 期間 SCK 邊緣數 = 2 × `LEN` | `LEN` ≥ 33 失敗 |
-| U2 `tb_uart_rx_rate` | PE-3 | 單元 | 行為模型以 `+ERR_PPM` 偏差連續送 64 個 8N1 frame，frame 之間沒有 idle | 64 個 byte 全部正確收到 | `ERR_PPM` > 0 失敗；≤ 0 通過 |
+| U2 `tb_uart_rx_rate` | PE-3 | 單元 | 行為模型以 `+ERR_PPM` 偏差連續送 64 個 8N1 frame，frame 之間沒有 idle | 64 個 byte 全部正確收到 | `ERR_PPM` ≥ 116 失敗、≤ 100 通過（v7.1 由 [UART 模型](../tools/model/uart_rx_model.py) 算出：門檻約為每個 frame 快 1 個時脈） |
 | U3 `tb_i2s_clk_gen` | PE-9 | 單元 | `CTRL2` = 0–9、`mclk_div` = 0、1、2、3、4、8 | BCLK 有翻轉、`bclk_en` 有脈衝、每半個 LRCLK 剛好 16 個 BCLK | `CTRL2` = 0、8、9 與 `mclk_div` = 0、1 失敗 |
 | S1 `dt_ecb_single_pair_block` | CP-1 | 系統 | 先寫 `glb_scratch` 標記值，再送只帶 1 組（寫 `ptp_scratch`）的 `WR_BLOCK`，frame 補到 60 byte | `ptp_scratch` 被寫入，`glb_scratch` 不變 | `glb_scratch` 被覆寫，失敗 |
 | S2 `dt_spi_read_only` | PE-1 | 系統 | `num_wr = 0`、`num_cmd = 0`、`num_rd = 4` 後 start | `status[4]` done、`status[0]` 不 busy | busy 一直為 1，失敗 |
@@ -30,6 +30,7 @@
 | S10 `dt_pause_quanta`（v7） | TX-8 | 系統（`SENSOR_TX_IF_INST ≥ 2`） | sensor 0 quanta `0x1111`、不啟用 PAUSE；sensor 1 quanta `0x2222`、AFULL = 1、輸出停住，送一包給 sensor 1 | PAUSE 請求上升時 `pause_gen.i_pause_time = 0x2222` | `0x1111`，失敗 |
 | S11 `dt_rx_parser_burst`（v7） | DP-1、DP-2 | 系統 | 400 個 60-byte frame 背靠背（中間沒有空拍）送往其他 MAC；之後讀 3 次 `glb_scratch` | 流量停止後 `in_pkt_cnt == out_pkt_cnt`，3 次 ECB 讀取都正確 | 計數不相等、ECB 讀取逾時或讀錯，失敗；之後到 reset 前都錯 |
 | S12 `dt_eeprom_absent`（v7） | PE-7 | 系統（`ENUM_EEPROM`，獨立一次模擬） | 時間 0 `force` EEPROM 模型的 SDA 不回 ACK，不跑 `hololink_init()` | `eeprom_info` 完成後 `mac_addr = CA:FE:C0:FF:EE:00` | `X`（硬體上多半是 0），失敗 |
+| S13 `dt_vp_unserved_stall`（v7.1） | DP-8 | 系統（`SENSOR_RX_IF_INST`，sensor 0 至少 2 個 VP） | pass-through pattern 同時寫進 VP 0 與 VP 1 的欄位，host 0 的 `vip_mask` 只留 VP 0，送 `nframes` 個 frame | VP 0 送出 `nframes` 個 frame 結尾 | VP 1 的 FIFO 快滿後共用的 `pack_tready` 停住，VP 0 也停，失敗 |
 
 ## 放進 `nv_hsb_ip_simple_tb`
 
@@ -60,6 +61,9 @@ dt_stx_overflow_boundary(0, p);
 dt_pause_quanta(p);
 `endif
 dt_rx_parser_burst(400, p);     // leaves rx_parser inconsistent on the current RTL; run last
+`ifdef SENSOR_RX_IF_INST
+dt_vp_unserved_stall(8, p);     // v7.1; leaves sensor 0 stalled on the current RTL
+`endif
 ```
 
 S12 要獨立一次模擬：在 reset 釋放前的 `initial` 呼叫 `dt_eeprom_absent_setup()`，主流程不跑 `hololink_init()`，直接呼叫 `dt_eeprom_absent_check(p)`。
@@ -74,6 +78,7 @@ S12 要獨立一次模擬：在 reset 釋放前的 `initial` 呼叫 `dt_eeprom_a
 | S8 | `SIF_TX_ROCE_RC_ENABLE`、`SENSOR_TX_IF_INST` |
 | S9 | `SENSOR_TX_IF_INST` |
 | S10 | `SENSOR_TX_IF_INST`，至少 2 個 SIF TX（不足時自動略過） |
+| S13 | `SENSOR_RX_IF_INST`；sensor 0 至少 2 個 VP 且 `VP_SIZE < DIN`（不足時自動略過）。`nframes` × frame 大小要超過 VP FIFO（約兩個封包的 payload） |
 
 ## 靜態檢查（v7）
 
@@ -105,7 +110,6 @@ python3 tools/check_tests.py ../holoscan-sensor-bridge
 
 | 問題 | 原因 | 建議 |
 |---|---|---|
-| DP-8（packetizer VP 停住整個 SIF 輸入） | 需要多個 VP 與 `vp_mask` 設定，testbench 的 `program_packetizer_passthrough()` 只設定 VP 0，沒有現成的多 VP 設定 task | 先補一個多 VP 的 packetizer 設定 task，再讓某個 VP 的 host 不接收（從 `vp_mask` 移除），檢查其他 VP 的 frame 是否繼續送出 |
 | BR-1（Bridge 大封包） | 本 repo 沒有板級啟用 Bridge，testbench 也沒有 | 先在 `fpga_sensor_top_pkg.svh` 啟用 Bridge |
 | PT-1 – PT-5（PTP） | 需要 PTP master 模型 | 寫一個送 Sync / Follow_Up / Delay_Resp 的行為模型 |
 | TX-4（`roce_ack` checksum） | 觸發條件是不帶 payload 的 SEND 且 checksum ≤ 3，需刻意構造 IP header | 已用[數值驗證](verification-calcs.md)確認；模擬時可用 IP identification 欄位調整 checksum |

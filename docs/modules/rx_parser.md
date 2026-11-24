@@ -204,10 +204,11 @@ LS 封包另外在**進入** LS FIFO 時檢查空間：`fcs_buffer` 在封包 `t
 
 ![rx_parser 讀出時序](../timing/rx_parser_readout.svg)
 
-依 RTL 推導，未經模擬。重點：
+v7.1 起這張圖由[逐拍模型](../../tools/model/rx_parser_model.py)產生（`--wave`），內容是兩個背靠背的 10-beat 封包（HOST_WIDTH = 64）；未經 HDL 模擬。重點：
 
-- 封包 `tlast` 之後還要等 IPv4 checksum pipeline（`proc_pipeline[4]`），大約 4 拍。
-- metadata FIFO 的 `empty` 是暫存輸出，再加 `hdr_ready` 暫存一拍，所以封包收完到開始輸出約 7 拍。
+- 64-bit 時 header 在第 8 拍（`D_CYCLES − 1`）收齊，`axis_to_vec` 的 `o_valid` 在下一拍，`proc_pipeline[0]` 再晚一拍寫入 `hdr_buffer`；10-beat 封包剛好與 `tlast` 同拍。
+- IPv4 checksum 結果在 `proc_pipeline[4]`，比 `hdr_buffer` 晚 4 拍。
+- metadata FIFO 的 `empty` 是暫存輸出（寫入後 2 拍才清除），再加 `hdr_ready` 暫存一拍，所以從 `tlast` 那一拍到第一個輸出 beat 是 **8 拍**（v6 寫約 7 拍）。
 - 連續讀出時每個封包之間只有 **1 拍**空檔：`buf_axis_eop` 的下一拍 `buf_axis_tready = 0`、同一拍 `hdr_rden = 1`，再下一拍 `buf_axis_tready` 重新拉高，而下一個封包的第一拍已經由 `fifo_rden` 預取好。n 拍的封包讀出需要 n + 1 拍（v7 以[逐拍模型](../../tools/model/rx_parser_model.py)確認；v6 以前寫成至少 2 拍是錯的）。各板級能否跟上線速見 [performance §7](../performance.md#7-rx_parser-讀出能力逐拍模型)。
 
 ## 暫存器

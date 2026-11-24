@@ -92,7 +92,7 @@ flowchart LR
 
 共用資源對效能的影響：
 
-- `dp_pkt_top` 只有一個 header FSM，所有 host 埠的 Data Plane 封包都要排隊經過它（[performance §3](../performance.md#3-hsb-內部的封包間隔推斷)）。
+- `dp_pkt_top` 只有一個 header FSM，所有 host 埠的 Data Plane 封包都要排隊經過它。逐拍模型顯示兩個 host 各一個 VP 時仍可同時達到單一 host 的速率（[performance §3](../performance.md#3-hsb-內部的封包間隔逐拍模型)）。
 - `rx_ls_parser` 把所有 host 埠的控制封包合成一條 8-bit 路徑；它的輸出是一條共用的串流，只有 `tvalid` 依 host 分開（[L922–L960](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L922-L960) 中 `lso_axis_tdata` 沒有 index）。
 - PTP 只在 host 0 收發：其他 host 埠的 PTP 輸出固定為 0（[L733–L740](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L733-L740)），`eth_pkt` 第 1 埠的 `tvalid` 也只在 host 0 接通（`ptp_tx_axis_tvalid_gated`，[L680–L687](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/top/HOLOLINK_top.sv#L680-L687)）。
 
