@@ -130,7 +130,7 @@ python3 tools/model/rx_parser_model.py      # 約 7 秒；任何預期不符時�
 |---|---|---|---|
 | CPNX100 / NV MIPI / MPF200（64 bit、156.25 MHz、10G） | 10.5 | 9 | 跟得上；輸入 FIFO 最多 13 筆 |
 | PYNQ RFSoC（512 bit、322.27 MHz、100G） | 2.17 | 2 | 跟得上；最多 4 筆 |
-| **Terasic S10（512 bit、201.42 MHz、100G）** | **1.5** | **2** | **跟不上**：metadata FIFO 與資料 FIFO 都溢位，之後的封包配錯 metadata |
+| **Terasic S10（512 bit、201.42 MHz、100G）** | **1.5** | **2** | **跟不上**：metadata FIFO 與資料 FIFO 都溢位，之後的封包配錯 metadata（[DP-15](issues.md#data-plane-與封包處理)） |
 
 **Terasic S10 在 100G 下連續收到的封包數上限**（超過就溢位，觸發 [DP-1 / DP-2](issues.md#data-plane-與封包處理)）：
 

@@ -38,7 +38,7 @@
 | PTP profile（E2E / gPTP / P2P）、首次同步直接設定計時器、DPLL 為 PI 迴路 | R + X | [ptp](docs/modules/ptp.md) |
 | IPv4 checksum 常數 `0xC52D` = 固定欄位和 + 28 | R + N（20000 組隨機 header） | [dp_pkt_top §7](docs/modules/dp_pkt_top.md#7-rocev2-header) |
 | RoCE header 長 70 byte、metadata 封包 202 byte、CoE metadata 174 byte、各 HIF 寬度的拍數 | R | [dp_pkt_top §9–§10](docs/modules/dp_pkt_top.md#9-metadata-封包) |
-| packetizer RAM 配置 `[CLEAR][SORT][VP]`、`pack_ram_addr = (RAM 編號 << 4) | 列` | R + X（testbench `pack_vp_ram_index()`） | [packetizer §4](docs/modules/packetizer.md#4-可程式化資料路徑packetizersv) |
+| packetizer RAM 配置 `[CLEAR][SORT][VP]`、`pack_ram_addr = (RAM 編號 << 4) \| 列` | R + X（testbench `pack_vp_ram_index()`） | [packetizer §4](docs/modules/packetizer.md#4-可程式化資料路徑packetizersv) |
 | host RAW10 / RAW12 排程 `0x11F1FFF7` / `0x11210007` 的解碼 | R + X（`packetizer_program.cpp`） | [packetizer §8](docs/modules/packetizer.md#8-host-軟體的排程交叉比對) |
 | `f_SCL ≈ f_APB / (2 × clk_cnt)`；host `clk_cnt = 0x19` 在 19.53 MHz 時為 390 kHz | R + X（host 註解「400 kHz」、testbench 註解） | [peripherals §I2C](docs/modules/peripherals.md#i2c) |
 | `configure_roce()` 的寫入順序與每個暫存器的 RTL 效果 | R + X | [flow §5](docs/flow.md#5-設定-data-planedatachannelconfigure_roce) |
@@ -59,20 +59,24 @@
 
 ## 問題清單
 
-RTL 問題的描述、嚴重度、觸發條件、確認方法與建議修正只在 [issues.md](docs/issues.md) 維護，這裡不重複。目前 52 項（中 14、低 38，沒有「高」），另有註解與死碼 14 項；方法分布為 R 38、R + M 6、R + X 6、R + N 1、R + X + N 1，沒有只靠推斷（I）的項目。不屬於 `nv_hsb_ip` 的板級限制（例如 CPNX100 `cam_rcvr` 不能反壓相機）記在 [performance §6](docs/performance.md#6-緩衝與反壓鏈) 與 [boards](docs/boards.md)。
+RTL 問題的描述、嚴重度、觸發條件、確認方法與建議修正只在 [issues.md](docs/issues.md) 維護，這裡不重複。目前 65 項（高 1、中 20、低 44），另有註解與死碼 15 項；方法分布為 R 43、R + M 11、R + X 7、R + N 2、R + I 1、R + X + N 1，沒有只靠推斷（I）的項目。每個編號都連到描述它的模組文件，模組文件的注意事項也都標了編號。不屬於 `nv_hsb_ip` 的板級限制（例如 CPNX100 `cam_rcvr` 不能反壓相機）記在 [performance §6](docs/performance.md#6-緩衝與反壓鏈) 與 [boards](docs/boards.md)。
 
 ## 自動檢查
 
-`python3 tools/check_all.py ../holoscan-sensor-bridge` 一次跑完下列檢查（各工具說明見 [tools/README](tools/README.md)）。
+`python3 tools/check_all.py ../holoscan-sensor-bridge` 一次跑完下列檢查（各工具說明見 [tools/README](tools/README.md)），並確認本節與其他文件中寫死的數字和工具輸出一致。
 
 | 結果 | 方法 | 工具 |
 |---|---|---|
 | host 用到的 96 個位址常數中 87 個在 RTL 暫存器索引找得到；其餘 9 個是 I2S 狀態 4 個（PE-15）與 S10 的 JESD 廠商 IP 5 個（不在本 repo 的 RTL 內） | X | `check_host_regs.py` |
 | host 寫入的 597 個常數值中，526 個可對到 `regmap_pkg` 暫存器且非 0，都沒有寫到 RTL 不讀的位元 | X | `check_host_regs.py --bits` |
-| 文件中 618 個原始碼連結的行號都在檔案範圍內；228 個可依識別字判斷的連結中，201 個自動吻合、27 個人工確認 | 自動 + 人工 | `check_links.py` |
+| host 讀取後做位元測試的 9 處中，8 處可對到 RTL 的 `stat_reg` 指派；1 處測試 RTL 固定為 0 的位元（NT-15） | X | `check_host_regs.py --reads` |
+| 暫存器索引的 185 個項目中，host 存取了 122 個；其餘 63 個逐一分類（依 reset 值運作、沒有作用、host 未使用的功能、除錯用狀態），見 [memory-map](docs/registers/memory-map.md#host-沒有存取的暫存器) | R + X | `check_unused.py` |
+| 文件中 622 個原始碼連結的行號都在檔案範圍內；231 個可依識別字判斷的連結中，204 個自動吻合、27 個人工確認 | 自動 + 人工 | `check_links.py` |
+| 80 個問題編號都在模組文件中有描述，`issues.md` 的編號連到該處 | 自動 | `check_issue_refs.py` |
 | 290 個實例中，握手 / 狀態類埠空接 131 處、輸入綁常數 14 處，全部人工分類；新問題併入 BR-7，其餘是已知問題或刻意設計 | R（掃描 + 人工） | `scan_ports.py` |
 | 檔案內跨時脈 23 處：5 處依名稱判定為同步器或準靜態設定，18 處人工確認，沒有新問題 | R（掃描 + 人工） | `scan_cdc.py`，見 [lib §HSB 中的使用檢查](docs/modules/lib.md#hsb-中的使用檢查) |
-| `nv_hsb_ip` 的 115 個檔案、115 個模組 / package 都在文件中出現；文件表格的 23 個「行數」欄與原始碼一致 | 自動 | `check_coverage.py` |
+| 模組之間（經由埠）的跨時脈 13 處：7 處是 `init_done` 前就固定的 EEPROM 資料，6 處是板級 I2C / SPI 輸入同步在錯的時脈（PE-17） | R（掃描 + 人工） | `scan_cdc_ports.py` |
+| `nv_hsb_ip` 的 115 個檔案、115 個模組 / package 都在文件中出現；文件表格的 23 個「行數」欄、22 個 reset 值與原始碼一致；212 個表格的欄數依 GitHub 的切法一致 | 自動 | `check_coverage.py` |
 | 各板級 `HOLOLINK_def.svh` 的 22 列設定（132 格）與 [boards.md](docs/boards.md#設定比較) 一致 | 自動 | `gen_board_table.py` |
 | `tests/` 草稿用到的埠、參數、task 參數個數與階層路徑都存在 | 自動 | `check_tests.py` |
 

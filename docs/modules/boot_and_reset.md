@@ -82,7 +82,7 @@ flowchart LR
 
 **CRC**（[eeprom_info.sv#L276–L322](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L276-L322)）：
 
-- 程式實際用 `0x8C` 右移，也就是反射多項式 `0x31`（x⁸ + x⁵ + x⁴ + 1，Dallas / Maxim CRC-8），初值 0。檔頭註解寫 x⁸ + x³ + x² + 1 / `0xB0`，與程式不符。
+- 程式實際用 `0x8C` 右移，也就是反射多項式 `0x31`（x⁸ + x⁵ + x⁴ + 1，Dallas / Maxim CRC-8），初值 0。檔頭註解寫 x⁸ + x³ + x² + 1 / `0xB0`，與程式不符。（[NT-10](../issues.md#註解與死碼不影響功能)）
 - 計算範圍是 byte 0–254，`eeprom_crc_err = (CRC ≠ 0)`。但 `fpga/script/eeprom/eeprom_utility.py` 的做法是把 byte 0–254 的 CRC 存在 byte 255，所以照工具正確寫入的 EEPROM，RTL 算出的值通常不為 0。 已用 [數值驗證](../verification-calcs.md) 確認：10000 個由工具寫入的隨機映像中有 9964 個被判為錯誤，而 RTL 算出的值每次都等於 byte 255；正確的判斷應是 `crc != byte255`。
 - `eeprom_crc_err` 在 `HOLOLINK_top` 中**沒有連到任何地方**，CRC 結果不影響開機，欄位不論 CRC 是否正確都會被使用。
 
@@ -104,11 +104,11 @@ flowchart LR
 `glb_ctrl_top` 支援 `UUID_VAL` 參數（非 0 時在狀態區多 4 個暫存器放 UUID），但 `HOLOLINK_top` 沒有傳這個參數，所以 UUID 只出現在 BOOTP 封包裡。
 
 ## 注意事項
-1. **EEPROM 不存在或沒有回應時，MAC 變成 I2C 資料緩衝區 RAM 的初始內容。** I2C 控制器在位址 byte 收到 NACK 時直接 `I2C_PERI_NACK → I2C_DONE`（[i2c_ctrl_fsm.sv#L288–L289](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c_ctrl_fsm.sv#L288-L289)），不會進 `I2C_READ`，所以 `rd_data_valid`（[L213](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c_ctrl_fsm.sv#L213)）不會寫入資料緩衝區。`eeprom_info` 只輪詢 `status[0]` busy（[eeprom_info.sv#L206](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L206)），不看 `status[3]` NACK，之後照常讀 `0x0300_0304` / `0x0300_0308` 並覆寫 `mac_addr`（[L388–L402](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L388-L402)）。這兩個 word 只有 I2C 讀取會寫入（`eeprom_info` 自己只寫 word 0 的 EEPROM 位址），而 `dp_ram` 沒有 reset 也沒有初始化：
+1. **EEPROM 不存在或沒有回應時，MAC 變成 I2C 資料緩衝區 RAM 的初始內容。** I2C 控制器在位址 byte 收到 NACK 時直接 `I2C_PERI_NACK → I2C_DONE`（[i2c_ctrl_fsm.sv#L288–L289](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c_ctrl_fsm.sv#L288-L289)），不會進 `I2C_READ`，所以 `rd_data_valid`（[L213](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/i2c/i2c_ctrl_fsm.sv#L213)）不會寫入資料緩衝區。`eeprom_info` 只輪詢 `status[0]` busy（[eeprom_info.sv#L206](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L206)），不看 `status[3]` NACK，之後照常讀 `0x0300_0304` / `0x0300_0308` 並覆寫 `mac_addr`（[L388–L402](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/sys_init/eeprom_info.sv#L388-L402)）。這兩個 word 只有 I2C 讀取會寫入（`eeprom_info` 自己只寫 word 0 的 EEPROM 位址），而 `dp_ram` 沒有 reset 也沒有初始化：（[PE-7](../issues.md#周邊)）
    - 冷開機：FPGA block RAM 的上電內容，多數 FPGA 是 0，MAC 變成 `00:00:00:00:00:00`。
    - 軟體 reset 後再跑一次：host 之前 I2C 讀取留下的資料。
    - 模擬：`X`。
 
    無論哪一種，都**不會**保留 reset 值 `CA:FE:C0:FF:EE:00`（R）。多塊沒有 EEPROM 的板子會拿到相同的 MAC。
-2. EEPROM CRC 的檢查方式與寫入工具不一致，而且結果沒有被使用（見上）。
+2. EEPROM CRC 的檢查方式與寫入工具不一致，而且結果沒有被使用（見上）。（[PE-8](../issues.md#周邊)）
 3. 軟體 reset 期間 APB、HIF、PTP、SIF 全部 reset，BOOTP 取得的 IP 也會遺失，host 必須重新 enumeration。

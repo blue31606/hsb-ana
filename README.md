@@ -95,4 +95,4 @@ python3 tools/check_all.py ../holoscan-sensor-bridge      # 上游 checkout 到 
 
 ## 版本紀錄
 
-目前版本 v7.2。各版內容與更正過的結論見 [CHANGELOG](CHANGELOG.md)。
+目前版本 v7.3。各版內容與更正過的結論見 [CHANGELOG](CHANGELOG.md)。

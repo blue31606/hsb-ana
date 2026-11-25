@@ -196,6 +196,103 @@ EXTRA = [
 ]
 
 
+# ---- reset values of s_apb_reg control registers (parameter RST_VAL) ----
+def _strip(t):
+    return re.sub(r"//.*", "", re.sub(r"/\*.*?\*/", "", t, flags=re.S))
+
+
+def _split_top(body):
+    items, depth, cur = [], 0, ""
+    for ch in body:
+        if ch in "{(":
+            depth += 1
+        elif ch in "})":
+            depth -= 1
+        if ch == "," and depth == 0:
+            items.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        items.append(cur.strip())
+    return items
+
+
+def _num(tok, consts):
+    tok = tok.strip()
+    m = re.fullmatch(r"(\d+)?'([hdbHDB])([0-9a-fA-F_xXzZ]+)", tok)
+    if m:
+        base = {"h": 16, "d": 10, "b": 2}[m.group(2).lower()]
+        return (int(m.group(1)) if m.group(1) else None), int(m.group(3).replace("_", ""), base)
+    e = re.sub(r"\b([A-Za-z_]\w*)\b", lambda x: str(consts.get(x.group(1), x.group(1))), tok)
+    return None, int(eval(e, {}))
+
+
+# parameters of RST_VAL set from each board's HOLOLINK_def.svh (checked by hand)
+BOARD_PARAM = {"GPIO_RST_VAL": "板級 `GPIO_RESET_VALUE`（S10 `0x0000000F`，其他 0）"}
+
+
+def _concat_words(expr, consts):
+    """Evaluate a {..} concatenation of reset values into {word index: value or label}."""
+    expr = expr.strip()
+    if not expr.startswith("{"):
+        return None
+    items = _split_top(expr[1:-1])
+    words, pos = {}, 0
+    for it in reversed(items):                  # LSB first
+        if it in ("'0", "0"):
+            break                               # fill: the rest is zero
+        m = re.fullmatch(r"\{\s*\((.*)\)\s*\{\s*1'b0\s*\}\s*\}", it)
+        if m:
+            pos += _num(m.group(1), consts)[1]
+            continue
+        if re.fullmatch(r"[A-Za-z_]\w*", it):  # a parameter set by the board (GPIO_RST_VAL)
+            words[pos // 32] = BOARD_PARAM.get(it, f"板級 `{it}`")
+            pos += 32
+            continue
+        w, v = _num(it, consts)
+        words[pos // 32] = v
+        pos += w or 32
+    return words
+
+
+def reset_values(ip, module, consts):
+    """{ctrl index: reset} for the s_apb_reg in <module>; {} when RST_VAL is left at '0; None if not s_apb_reg."""
+    src = None
+    for f in ip.rglob("*.sv"):
+        if "simple_tb" in str(f):
+            continue
+        t = f.read_text(errors="replace")
+        if re.search(r"^\s*module\s+" + module + r"\b", t, re.M):
+            src = _strip(t)
+            break
+    if src is None or not re.search(r"(?<![\w.])s_apb_reg\s*#", src):
+        return None
+    inst = src[re.search(r"(?<![\w.])s_apb_reg\s*#", src).start():]
+    m = re.search(r"\.RST_VAL\s*\(\s*(\w+)\s*\)", inst[:inst.find(");")])
+    if not m:
+        return {}
+    name = m.group(1)
+    pool = src + "\n".join(_strip(p.read_text(errors="replace")) for p in ip.rglob("*_pkg.sv"))
+    d = re.search(r"localparam\s*\[[^\]]*\]\s*" + name + r"\s*=\s*", pool)
+    if not d:
+        return None
+    rest = pool[d.end():]
+    depth = 0
+    for i, ch in enumerate(rest):
+        depth += ch == "{"
+        depth -= ch == "}"
+        if depth == 0 and ch == "}":
+            return _concat_words(rest[:i + 1], consts)
+    return None
+
+
+def fmt_reset(v):
+    if v is None:
+        return ""
+    return v if isinstance(v, str) else f"`0x{v:08X}`"
+
+
 def fmt(a):
     return f"0x{a >> 16:04X}_{a & 0xFFFF:04X}"
 
@@ -241,11 +338,21 @@ def main(root):
         out.append(f"| `{fmt(base)}` | [{title}]({doc}) | `{module}` | {stride} | {len(regs)} |")
     out.append("")
 
-    out += ["## 全部暫存器", "", "| 位址 | 名稱 | 類型 | 區塊 | 說明 |", "|---|---|---|---|---|"]
-    for title, base, _, _, doc, regs in blocks:
+    ip = Path(root) / "fpga" / "nv_hsb_ip"
+    consts = {k: int(v) for k, v in re.findall(r"localparam\s+(\w+)\s*=\s*(\d+)\s*;", text)}
+    out += ["## 全部暫存器", "",
+            "Reset 欄：`s_apb_reg` 控制暫存器的 `RST_VAL`（沒有給的區塊為 0）；空白表示不是 `s_apb_reg` 的控制暫存器，"
+            "reset 值見各區塊文件。", "",
+            "| 位址 | 名稱 | 類型 | Reset | 區塊 | 說明 |", "|---|---|---|---|---|---|"]
+    for title, base, _, module, doc, regs in blocks:
+        # RAM windows share their module with a register block; only registers get a reset value
+        rv = None if "RAM" in title else reset_values(ip, module, consts)
         for off, name, kind, desc in regs:
             shown = name if name.startswith("[") else f"`{name}`"
-            out.append(f"| `{fmt(base + off)}` | {shown} | {kind} | [{title}]({doc}) | {desc} |")
+            r = ""
+            if rv is not None and kind.startswith("RW") and off % 4 == 0 and off // 4 < 32:
+                r = fmt_reset(rv.get(off // 4, 0))
+            out.append(f"| `{fmt(base + off)}` | {shown} | {kind} | {r} | [{title}]({doc}) | {desc} |")
     out.append("")
     out += ["## 註解與程式不一致的項目", ""]
     if mismatches:

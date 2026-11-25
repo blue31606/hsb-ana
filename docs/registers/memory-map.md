@@ -66,3 +66,21 @@ flowchart TB
 | Bridge | 見 [bridge.md §暫存器](../modules/bridge.md#暫存器) |
 
 所有區塊（含以上）的絕對位址整理在 [all-registers.md](all-registers.md)。
+
+## host 沒有存取的暫存器
+
+[`tools/check_unused.py`](../../tools/check_unused.py) 在 host 軟體（`src/`、`python/`、`examples/`、`hololink_module/`、`tools/`）中找每個暫存器的存取：具名位址常數、8 位數的十六進位常值、SPI / I2C / UART 輔助類別的 offset、以及執行時才算出索引的 GPIO 陣列。[完整暫存器索引](all-registers.md)的 185 個項目中，host 存取了 122 個；其餘 63 個逐一分類如下（R + X）。
+
+| 類別 | 暫存器 | 說明 |
+|---|---|---|
+| 依 reset 值運作 | `inst_dec` 的 `ecb_udp_port`（`0x2000` = 8192）、`stx_udp_port`（`0x12B7` = 4791）、`roce_ecb_dest_qp`（`0x1000`）、`inst_dec_ctrl`、`inst_dec_ack_ctrl` | host enumerator 的預設控制埠也是 8192（`enumerator.cpp` 的 `default_control_port`），兩邊一致 |
+| 依 reset 值運作 | `eth_pkt_ctrl`、`eth_pkt_hp_cnt`、`dp_pkt_crc_xor`（frame CRC 不做最後的 XOR）、I2C `stretch_timeout`（5,000,000 個 APB 週期）、`num_trans` | |
+| 依 reset 值運作 | SIF TX `pause_quanta` | 沒寫過時 `pause_gen` 用 `0xFFFF`（[tx_stream_buffer](../modules/tx_stream_buffer.md)），所以 host 不寫也能送出有效的 PAUSE |
+| 沒有作用的暫存器 | `lpbk_udp_port`（NT-3）、`static_hif_qp`、`inst_dec_rsvd_1/2`、`dp_pkt_1722B`（NT-6）、`ptp_ctrl_pcp`（NT-7） | RTL 本身也沒有使用 |
+| host 沒有使用的功能 | Sensor RX Data Generator 全部 7 個；Bridge 3 個；RoCE QP RAM、Data Plane 設定 RAM 的 PSN | data generator 只在 `SIF_RX_DATA_GEN` 板級存在；Bridge 沒有板級啟用；QP RAM 只有 `ENABLE_ROCE_ACK` 時有用 |
+| host 沒有使用的功能 | ECB 區的 `ecb_addr_lsb/msb`、`ecb_rkey`、`ecb_pkey`、`ecb_dest_qp`、`ecb_scratch` | RoCE-ECB 回應的 header 欄位；host 沒有設定，回應帶 0。host 是否使用 RoCE-ECB 不在本次比對範圍（I） |
+| host 沒有使用的功能 | `delayed_io` 的 `set_now`、`clr_delayed`、`cancel` | host 只用到其中一部分操作 |
+| 只供除錯的狀態 | `hsb_stat`、`ecb_stat`、`inst_dec_stat`、`ipv4_chksum_err_cnt`、`eth_pkt_stat`、`dp_pkt_stat`、`pack_tvalid_cnt`、`pack_psn_cnt`、SIF TX 的 watermark 與 `status`、`delayed_io` 狀態、PTP 的 `ptp_sync_cf_0`、`ptp_mean_dly`、`ptp_inc`、`ptp_fa_adj`、`ptp_dly_cf_0`、`ptp_ip_dly_asymm` | 計數器與狀態；SIF TX 的溢位旗標沒有 host 讀取，溢位（TX-7）不會被軟體察覺 |
+| 位址錯誤而沒讀到 | I2S `STAT0`–`STAT3` | host 讀的是 `0x24`–`0x30`（PE-15） |
+
+host 定義了但沒有任何地方使用的位址常數有 5 個：`UART_CTRL4`（`glitch`）、`I2S_CTRL6`、`I2S_STAT1`、`I2S_STAT3`（PE-15 的錯誤位址）、`JESD_PLL_CTRL`（S10 廠商 IP）。

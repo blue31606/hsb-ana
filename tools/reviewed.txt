@@ -3,6 +3,8 @@
 #   check_links  <doc>             <cited file>#L<range>   (the doc line number is not used)
 #   scan_ports   <module>.<port>   <file under fpga/ or *>  (* = every instance)
 #   scan_cdc     <file under fpga/nv_hsb_ip>  <source signal>
+#   check_host_reads  <host file>   <register>@<block>
+#   scan_cdc_ports    <parent module or board top file>  <instance>.<port>
 
 # --- check_links ---
 check_links docs/architecture/overview.md HOLOLINK_top.sv#L922-L960 -- gen_eth_pkt block, shows lso_axis_tdata without index
@@ -112,3 +114,21 @@ scan_cdc misc/dp_ram.sv blk_mem -- OK: as above
 scan_cdc misc/dp_ram.sv mem -- OK: as above
 scan_cdc ref_design/delayed_io/delayed_io.sv delay_value_us -- known: one-stage capture into proc_clk, ref_design.md delayed_io note 5 (CPNX100 ties both clocks to APB, not affected)
 scan_cdc ref_design/delayed_io/delayed_io.sv output_states_bits -- known: one-stage capture back into cmd_clk, same note; same clock on CPNX100
+
+# --- check_host_reads ---
+check_host_reads src/hololink/core/hololink.cpp status@I2C -- known: NT-15, host checks I2C_FSM_ERR (status[1]) but i2c_ctrl_fsm ties it to 0 (L103); the branch never fires
+
+# --- scan_cdc_ports ---
+scan_cdc_ports HOLOLINK_top rx_parser.i_dev_mac_addr -- OK: MAC from eeprom_info, fixed before init_done; HIF users are gated by the synchronized init_done (lib.md CDC table)
+scan_cdc_ports HOLOLINK_top u_rx_ls_parser.i_dev_mac_addr -- OK: as above
+scan_cdc_ports HOLOLINK_top u_ptp_top.i_dev_mac_addr -- OK: as above (PTP side)
+scan_cdc_ports HOLOLINK_top u_dp_pkt_top.i_dev_mac_addr -- OK: as above
+scan_cdc_ports HOLOLINK_top u_pause_gen.i_dev_mac_addr -- OK: as above
+scan_cdc_ports HOLOLINK_top u_rx_ls_parser.i_eeprom_ip_addr -- OK: qualified by the synchronized EEPROM IP valid (lib.md CDC table)
+scan_cdc_ports HOLOLINK_top u_rx_ls_parser.i_enum_data -- OK: enumeration data from EEPROM, fixed after init
+scan_cdc_ports lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv u_hololink_top.i_spi_sdio -- ISSUE: PE-17, synchronized on hif_clk, sampled on apb_clk
+scan_cdc_ports lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv u_hololink_top.i_i2c_scl -- ISSUE: PE-17
+scan_cdc_ports lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv u_hololink_top.i_i2c_sda -- ISSUE: PE-17
+scan_cdc_ports nv_mipi_ref_design/mipi_cpnx_ref_design/rtl/top/FPGA_top.sv u_hololink_top.i_spi_sdio -- ISSUE: PE-17
+scan_cdc_ports nv_mipi_ref_design/mipi_cpnx_ref_design/rtl/top/FPGA_top.sv u_hololink_top.i_i2c_scl -- ISSUE: PE-17
+scan_cdc_ports nv_mipi_ref_design/mipi_cpnx_ref_design/rtl/top/FPGA_top.sv u_hololink_top.i_i2c_sda -- ISSUE: PE-17

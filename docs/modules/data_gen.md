@@ -86,8 +86,8 @@
 
 ### 注意事項
 
-1. **`timer = 0` 時不會循環播放。** 一輪結束的條件是 `(timer == 0) || loop_dis` → `DONE`（[ram_player.sv#L261–L265](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/ram_player.sv#L261-L265)），所以想要連續重播必須設 `timer ≥ 1`（R）。
-2. **`window_size < W_KEEP` 時沒有 `tlast`。** `window_size − W_KEEP` 是 32-bit 無號減法，下溢成很大的值，`data_cnt` 永遠到不了，整個 RAM 一直播下去（R）。
-3. **中途停止可能違反 AXIS。** 清 `ena[0]` 時如果下游沒有 ready，狀態機進 `DONE`，下一拍回 IDLE 並把 `tvalid` 拉低，收尾那一拍沒有被接受就消失了（[ram_player.sv#L247–L251](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/ram_player.sv#L247-L251)、[ram_player.sv#L238–L242](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/ram_player.sv#L238-L242)；R）。
+1. **`timer = 0` 時不會循環播放。** 一輪結束的條件是 `(timer == 0) || loop_dis` → `DONE`（[ram_player.sv#L261–L265](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/ram_player.sv#L261-L265)），所以想要連續重播必須設 `timer ≥ 1`（R）。（[PE-11](../issues.md#周邊)）
+2. **`window_size < W_KEEP` 時沒有 `tlast`。** `window_size − W_KEEP` 是 32-bit 無號減法，下溢成很大的值，`data_cnt` 永遠到不了，整個 RAM 一直播下去（R）。（[PE-11](../issues.md#周邊)）
+3. **中途停止可能違反 AXIS。** 清 `ena[0]` 時如果下游沒有 ready，狀態機進 `DONE`，下一拍回 IDLE 並把 `tvalid` 拉低，收尾那一拍沒有被接受就消失了（[ram_player.sv#L247–L251](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/ram_player.sv#L247-L251)、[ram_player.sv#L238–L242](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/data_gen/ram_player.sv#L238-L242)；R）。（[PE-11](../issues.md#周邊)）
 4. PTP BRAM 模式的位元切片寫死 `[511:192]`，只適用於 `W_DATA = 512`。
 5. 反壓處理用 `rd_data_lat` / `axis_tready_lat` 暫存 RAM 輸出，邏輯分支多；`tready` 頻繁翻轉時資料是否會重複或跳過，需要模擬確認（I）。

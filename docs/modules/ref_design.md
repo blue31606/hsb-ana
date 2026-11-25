@@ -67,9 +67,9 @@ host 軟體佐證：`VSYNC_CONTROL = 0x7000_0000`、`VSYNC_FREQUENCY = 0x7000_00
 
 ### 注意事項
 
-1. **取消不會停止計數器。** 立即設定、立即清除、取消都只清掉 `delayed_op_type`，`delayed_io_ctrl_fsm` 沒有取消輸入，會繼續數到原本的時間（`countdown_active` 一直為 1）。這段期間再送新的延遲要求，`start` 的上升緣在 `DELAY` 狀態被忽略，新操作會在**舊的到期時間**執行，而不是從現在起算延遲（R）。
-2. **計數中改變操作不會重新計時。** 延遲設 1 還沒到期時送延遲清 0，只會把操作類型換成清 0，到期時間不變（R）。
-3. **延遲有 +2.4 % 的誤差。** CPNX100 的 APB 時脈是 19.53125 MHz，但用的是預設 `CLK_FREQ = 19,541,250`，`CYCLES_PER_US` 無條件進位成 20，所以 1 µs 實際是 20 / 19.53 ≈ 1.024 µs（R）。
+1. **取消不會停止計數器。** 立即設定、立即清除、取消都只清掉 `delayed_op_type`，`delayed_io_ctrl_fsm` 沒有取消輸入，會繼續數到原本的時間（`countdown_active` 一直為 1）。這段期間再送新的延遲要求，`start` 的上升緣在 `DELAY` 狀態被忽略，新操作會在**舊的到期時間**執行，而不是從現在起算延遲（R）。（[PE-13](../issues.md#周邊)）
+2. **計數中改變操作不會重新計時。** 延遲設 1 還沒到期時送延遲清 0，只會把操作類型換成清 0，到期時間不變（R）。（[PE-13](../issues.md#周邊)）
+3. **延遲有 +2.4 % 的誤差。** CPNX100 的 APB 時脈是 19.53125 MHz，但用的是預設 `CLK_FREQ = 19,541,250`，`CYCLES_PER_US` 無條件進位成 20，所以 1 µs 實際是 20 / 19.53 ≈ 1.024 µs（R）。（[PE-14](../issues.md#周邊)）
 4. `delay_us × CYCLES_PER_US` 是 32 bit，延遲超過約 214 秒（20 拍 / µs 時）會溢位。
 5. 若 `proc_clk` 與 `cmd_clk` 不同，寫入脈衝只有 1 個 APB 時脈寬、而且沒有同步器：`proc_clk` 較慢時可能漏掉，任何情況下都有 metastability 風險（R；CPNX100 用同一個時脈，不受影響）。
 
@@ -107,7 +107,7 @@ flowchart LR
 | CTRL3 | `[1:0]` 位元深度（8 / 16 / 24 / 32）、`[3:2]` 格式（I2S / LJ / RJ / PCM） | | 2（24-bit、I2S） |
 | CTRL4 | `[0]` mono、`[2]` loopback | `[1]`（時脈來源）沒有使用 | 0 |
 | CTRL5 | `[15:0]` | RX 每個封包的 AXIS 拍數；0 = 不產生 `tlast` | 64 |
-| CTRL6 | | 中斷啟用：**沒有使用**，`o_irq = underrun | overrun` | 0 |
+| CTRL6 | | 中斷啟用：**沒有使用**，`o_irq = underrun \| overrun` | 0 |
 | CTRL7 | `[0]` | LRCLK 極性：0 = LRCLK 下降緣開始左聲道 | 0 |
 | CTRL8 | `[0]` | slot：0 = 每聲道固定 32 BCLK，1 = 每聲道 = 位元深度 | 1 |
 | STAT0 | `[0]` | locked：固定 1 | |
@@ -143,12 +143,12 @@ flowchart LR
 
 ### 注意事項
 
-1. **`CTRL2 = 8` 時 BCLK 停止。** `bclk_div = 256` 存在 8-bit 變數裡變成 0，`(0 >> 1) − 1` 在 32 bit 下是 `0xFFFFFFFF`，計數器永遠到不了；LRCLK 的除數 `slot_width << 8` 卻照常，所以 LRCLK 在跑而 BCLK 不動。`CTRL2` 為 0 或 > 8 時 BCLK 直接用 MCLK、但 `bclk_en` 不產生，serdes 不會前進（R）。
-2. **`mclk_div` 為 0 或 1 時 BCLK / LRCLK 不動。** 同樣的 `(mclk_div >> 1) − 1` 下溢，`mclk_en` 永遠不產生；`mclk_div = 1` 時 MCLK 腳位直接輸出參考時脈（R）。
+1. **`CTRL2 = 8` 時 BCLK 停止。** `bclk_div = 256` 存在 8-bit 變數裡變成 0，`(0 >> 1) − 1` 在 32 bit 下是 `0xFFFFFFFF`，計數器永遠到不了；LRCLK 的除數 `slot_width << 8` 卻照常，所以 LRCLK 在跑而 BCLK 不動。`CTRL2` 為 0 或 > 8 時 BCLK 直接用 MCLK、但 `bclk_en` 不產生，serdes 不會前進（R）。（[PE-9](../issues.md#周邊)）
+2. **`mclk_div` 為 0 或 1 時 BCLK / LRCLK 不動。** 同樣的 `(mclk_div >> 1) − 1` 下溢，`mclk_en` 永遠不產生；`mclk_div = 1` 時 MCLK 腳位直接輸出參考時脈（R）。（[PE-9](../issues.md#周邊)）
 3. `clk_gen` 的 `o_bclk_posedge` / `o_bclk_negedge` 命名與 serdes 的定義相反：`o_bclk_posedge` 在 BCLK 腳位即將下降時為 1。這兩個訊號只用來決定 TX / RX buffer 何時更新，RX 樣本的 valid 會維持一整個 BCLK，所以目前不影響功能（R + I）。
-4. RX 的 L / R 沒有標記。FIFO 溢位丟掉單一樣本後，之後的左右聲道會整體對調（R）：`i2s_axis_buffer_rx` 的 `axis_buffer` 用預設 `NO_BACKPRESSURE = 0`，almost full 時 `gbx_axis_tready = 0`，但 `o_i2s_ready` 送到 `i2s_serdes` 的 `i_rx_ready` 沒有被使用，樣本照送、不寫入。CPNX100 的 `AXI_DWIDTH = 32`（[FPGA_top.sv#L628–L629](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv#L628-L629)），每個 beat 就是一個樣本，所以丟掉的是單一樣本；溢位期間丟掉奇數個樣本時，之後 L / R 對調直到 reset。`AXI_DWIDTH = 64` 時 gearbox 把兩個樣本拼成一拍，`tready = 0` 期間新樣本覆寫同一個位置（[axis_gearbox.sv#L80](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_gearbox.sv#L80)、[#L93](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_gearbox.sv#L93)），同樣可能錯位。
-5. `o_locked` 固定為 1；CTRL6 中斷啟用沒有作用。
-6. **host 讀 I2S 狀態的位址和 RTL 不一致**（R + X，由 [`tools/check_host_regs.py`](../../tools/check_host_regs.py) 找到）。host 的 `I2S_STAT0`–`I2S_STAT3` 是 `I2S_APB + 0x24`–`0x30`（[hololink.cpp#L165–L168](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/hololink.cpp#L165-L168)），緊接在 CTRL8 之後；RTL 的狀態區在 `0x800`（上面的 `R_CTRL` 計算）。`0x24`–`0x30` 是第 9–12 個暫存器，既不在控制區（0–8）也不在狀態區，`s_apb_reg` 回 `0xBADADD12` 並設 `pslverr`（[s_apb_reg.sv#L121–L136](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L121-L136)），ECB 回應碼 0x03（invalid address）。所以 host 的 `clock_locked()`、`tx_underrun()`、`rx_overrun()`（[hololink.cpp#L2286–L2307](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/hololink.cpp#L2286-L2307)）都讀不到狀態，走 `bad_read_response` 的錯誤路徑。
+4. RX 的 L / R 沒有標記。FIFO 溢位丟掉單一樣本後，之後的左右聲道會整體對調（R）：`i2s_axis_buffer_rx` 的 `axis_buffer` 用預設 `NO_BACKPRESSURE = 0`，almost full 時 `gbx_axis_tready = 0`，但 `o_i2s_ready` 送到 `i2s_serdes` 的 `i_rx_ready` 沒有被使用，樣本照送、不寫入。CPNX100 的 `AXI_DWIDTH = 32`（[FPGA_top.sv#L628–L629](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/lattice/cpnx100-eth-sensor-bridge/cpnx100/rtl/top/FPGA_top.sv#L628-L629)），每個 beat 就是一個樣本，所以丟掉的是單一樣本；溢位期間丟掉奇數個樣本時，之後 L / R 對調直到 reset。`AXI_DWIDTH = 64` 時 gearbox 把兩個樣本拼成一拍，`tready = 0` 期間新樣本覆寫同一個位置（[axis_gearbox.sv#L80](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_gearbox.sv#L80)、[#L93](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_axis/axis_gearbox.sv#L93)），同樣可能錯位。（[PE-10](../issues.md#周邊)）
+5. `o_locked` 固定為 1；CTRL6 中斷啟用沒有作用。（[NT-13](../issues.md#註解與死碼不影響功能)）
+6. **host 讀 I2S 狀態的位址和 RTL 不一致**（R + X，由 [`tools/check_host_regs.py`](../../tools/check_host_regs.py) 找到）。host 的 `I2S_STAT0`–`I2S_STAT3` 是 `I2S_APB + 0x24`–`0x30`（[hololink.cpp#L165–L168](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/hololink.cpp#L165-L168)），緊接在 CTRL8 之後；RTL 的狀態區在 `0x800`（上面的 `R_CTRL` 計算）。`0x24`–`0x30` 是第 9–12 個暫存器，既不在控制區（0–8）也不在狀態區，`s_apb_reg` 回 `0xBADADD12` 並設 `pslverr`（[s_apb_reg.sv#L121–L136](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L121-L136)），ECB 回應碼 0x03（invalid address）。所以 host 的 `clock_locked()`、`tx_underrun()`、`rx_overrun()`（[hololink.cpp#L2286–L2307](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/hololink.cpp#L2286-L2307)）都讀不到狀態，走 `bad_read_response` 的錯誤路徑。（[PE-15](../issues.md#周邊)）
 7. host 的 `I2S_CLOCK_CTRL = 0x7000_0014` 寫的是 `vsync_gen` 的 `VSYNC_GPIO`（GPIO 多工選擇），寫入 `0xF`；I2S 時脈能否輸出取決於這個多工設定，兩邊的命名不同但位址一致。
 
 ## `imu_top`
@@ -206,7 +206,7 @@ flowchart LR
 
 ### 注意事項
 
-1. `axis_buffer` 的 `o_axis_rx_tready` 沒有接，下游反壓時資料直接遺失（R）。
-2. 每 frame 實際是 `samples_per_frame + 1` 個樣本：比較用 `sample_cnt == samples_per_frame`，而計數從 0 開始（R）。
+1. `axis_buffer` 的 `o_axis_rx_tready` 沒有接，下游反壓時資料直接遺失（R）。（[PE-12](../issues.md#周邊)）
+2. 每 frame 實際是 `samples_per_frame + 1` 個樣本：比較用 `sample_cnt == samples_per_frame`，而計數從 0 開始（R）。（[PE-12](../issues.md#周邊)）
 3. 時間戳是仲裁接受中斷的時間，加上 `pulse_sync` 的延遲，不是 IMU 實際取樣的時間（I）。
 4. `num_trans ≠ 0` 時 `cmd_valid` 要求 `num_wr_bytes ≥ num_rd_bytes`，原因不明（R）。

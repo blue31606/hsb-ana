@@ -18,12 +18,22 @@ for the registers named in reg_map/regmap_pkg.sv: `<array>[<name>][hi:lo]`, `[bi
 whole word when used without a slice. Writes of 0 are skipped. --table also prints the RTL
 bits used for every host constant that maps to a regmap register.
 
-Usage:  python3 tools/check_host_regs.py <path-to-holoscan-sensor-bridge> [--bits [--table]]
+With --reads it checks the other direction: for every host read_uint32() of a register whose
+result is tested with a mask (`value & MASK`, also on a later line, or `read_uint32(..) & MASK`),
+the bits tested are compared with the bits the RTL can drive (`assign stat_reg[..] = ..`;
+a constant 0 counts as never driven). Address parameters of helper classes are resolved
+through their constructor initializers, instance 0; a status word captured by the APB event
+sequencer is traced back to the register the sequencer read.
+
+Usage:  python3 tools/check_host_regs.py <path-to-holoscan-sensor-bridge> [--bits | --reads] [--table]
 Exit code 1 only if a constant cannot be parsed.
 """
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reviewed as reviewed_list  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -70,7 +80,7 @@ def rtl_index():
     regs = {}
     text = (ROOT / "docs/registers/all-registers.md").read_text()
     part = text.split("## 全部暫存器", 1)[1]
-    for m in re.finditer(r"^\| `0x([0-9A-F_]+)` \| \[?`([^`]+)`(?:\]\([^)]*\))? \| (\S+) \| \[([^\]]+)\]", part, flags=re.M):
+    for m in re.finditer(r"^\| `0x([0-9A-F_]+)` \| \[?`([^`]+)`(?:\]\([^)]*\))? \| (\S+) \| [^|]*\| \[([^\]]+)\]", part, flags=re.M):
         regs[int(m.group(1).replace("_", ""), 16)] = (m.group(2), m.group(4))
     return regs
 
@@ -201,6 +211,154 @@ def check_bits(up, argv):
                 print(f"  {n:34s} 0x{addr:08X} `{hit[0]}` 0x{used[hit[0]]:08X}  {', '.join(seen[hit[0]][:2])}")
     return 0
 
+# ---- --reads: bits the host tests on status registers vs bits the RTL drives ----
+# Address parameters of host helper classes, set to instance 0 (checked by hand).
+HOST_BASE_VARS = {"spi_address": 0x0300_0000, "i2c_address": 0x0300_0200,
+                  "port_number": 0, "bus_number": 0, "i2c_bus": 0, "spi_bus": 0}
+
+
+def rtl_status_bits(ip):
+    """{(file stem, status index or register name): mask of bits that can be non-zero}."""
+    out = {}
+    zero = re.compile(r"^(?:'0|'\{\s*default\s*:\s*0\s*\}|\d*'[hdb]0+|0)$")
+    for f in ip.rglob("*.sv"):
+        if "simple_tb" in str(f):
+            continue
+        t = re.sub(r"//.*", "", f.read_text(errors="replace"))
+        for m in re.finditer(r"assign\s+stat_reg\s*\[\s*([^\]]+?)\s*\]\s*(?:\[\s*(\d+)\s*(?::\s*(\d+))?\s*\])?\s*=\s*([^;]+);", t):
+            idx, hi, lo, rhs = m.group(1), m.group(2), m.group(3), m.group(4).strip()
+            n = re.match(r"(\w+)\s*-\s*stat_ofst$", idx)
+            key = (f.stem, n.group(1) if n else (int(idx) if idx.isdigit() else idx))
+            if zero.match(rhs):
+                out.setdefault(key, 0)
+                continue
+            if hi is not None:
+                lo_ = int(lo) if lo is not None else int(hi)
+                mask = ((1 << (int(hi) - lo_ + 1)) - 1) << lo_
+            else:
+                mask = 0xFFFFFFFF
+                c = re.match(r"\{\s*(\d+)'[dhb]0+\s*,", rhs)
+                sl = re.fullmatch(r"\w+\s*\[\s*(\d+)\s*:\s*(\d+)\s*\]", rhs)
+                if c:
+                    mask = (1 << (32 - int(c.group(1)))) - 1
+                elif sl:
+                    mask = (1 << (int(sl.group(1)) - int(sl.group(2)) + 1)) - 1
+            out[key] = out.get(key, 0) | mask
+    return out
+
+
+def check_reads(up, argv):
+    src = Path(up) / "src/hololink"
+    ip = Path(up) / "fpga/nv_hsb_ip"
+    regs = rtl_index()
+    text = (ROOT / "docs/registers/all-registers.md").read_text()
+    module_of = dict((t, m) for t, m in re.findall(r"^\| `0x[0-9A-F_]+` \| \[([^\]]+)\]\([^)]*\) \| `(\w+)` \|", text, re.M))
+    first_ro = {}
+    for a, (n, t) in sorted(regs.items()):
+        pass
+    for m in re.finditer(r"^\| `0x([0-9A-F_]+)` \| \[?`([^`]+)`(?:\]\([^)]*\))? \| RO \| [^|]*\| \[([^\]]+)\]", text, re.M):
+        a = int(m.group(1).replace("_", ""), 16)
+        first_ro.setdefault(m.group(3), a)
+    driven = rtl_status_bits(ip)
+    consts = {}
+    for f in sorted(list(src.rglob("*.hpp")) + list(src.rglob("*.cpp"))):
+        consts.update({k: v for k, v in parse_consts(f.read_text(errors="replace")).items() if k not in consts})
+    consts.update(HOST_BASE_VARS)
+    n_sites = n_judged = n_rev = 0
+    rows, flagged = [], []
+    reviewed = set(reviewed_list.load("check_host_reads"))
+    for f in sorted(src.rglob("*.cpp")):
+        t = f.read_text(errors="replace")
+        L = t.split("\n")
+        inits = []                    # (position, member, expression); the last one before a read wins
+        for m in re.finditer(r"[,:]\s*(\w+_)\s*\(\s*([^()]*)\)", t):
+            inits.append((m.start(), m.group(1), m.group(2)))
+        for m in re.finditer(r"\b(\w+_)\s*=\s*([^;=]+);", t):
+            inits.append((m.start(), m.group(1), m.group(2)))
+        inits.sort()
+        pos = [0]
+        for ln in L:
+            pos.append(pos[-1] + len(ln) + 1)
+        for i, line in enumerate(L):
+            m = re.search(r"(?:(\w+)\s*=\s*)?(?:[\w.]+(?:\.|->))?read_uint32\(\s*([^,()]+(?:\([^()]*\))?)\s*[,)](.*)", line)
+            if not m or "fmt" in line or "HSB_LOG" in line or "uint32_t Hololink::" in line:
+                continue
+            var, aexpr, tail = m.group(1), m.group(2).strip(), m.group(3)
+            e = aexpr
+            for _ in range(3):                # local alias (status_cache = reg_status_) or member init
+                if not re.fullmatch(r"\w+", e) or e in consts:
+                    break
+                local = [re.search(r"\b" + e + r"\s*=\s*([^;=]+);", x) for x in L[max(0, i - 60):i]]
+                local = [x.group(1) for x in local if x]
+                if local:
+                    e = local[-1].strip()
+                    continue
+                cand = [ex for p_, mem, ex in inits if p_ < pos[i] and mem == e]
+                if not cand:
+                    break
+                e = cand[-1]
+            e = re.sub(r"\b([A-Za-z_]\w*)\b", lambda x: str(consts[x.group(1)]) if x.group(1) in consts else x.group(0), e)
+            if "sequencer" in e:
+                # a status word captured by the APB event sequencer and read back from its RAM:
+                # use the register the sequencer read (sequencer.read_uint32(<reg>, ...)) nearby
+                near = [re.search(r"sequencer\.read_uint32\(\s*(\w+)", x) for x in L[max(0, i - 200):i + 200]]
+                near = [x.group(1) for x in near if x]
+                if near:
+                    cand = [ex for p_, mem, ex in inits if p_ < pos[i] and mem == near[0]]
+                    e = cand[-1] if cand else near[0]
+            e = re.sub(r"\b([A-Za-z_]\w*)\b", lambda x: str(consts[x.group(1)]) if x.group(1) in consts else x.group(0), e)
+            try:
+                addr = int(eval(e, {}))
+            except Exception:
+                continue
+            hit = lookup(regs, addr)
+            if not hit:
+                continue
+            name, title = hit
+            n_sites += 1
+            used = 0
+            d = re.search(r"\)\s*&\s*(0x[0-9A-Fa-f]+|\w+)", ")" + tail)
+            if d:
+                used |= consts.get(d.group(1), 0) if not d.group(1).startswith("0x") else int(d.group(1), 16)
+            if var:
+                for nxt in L[i + 1:i + 31]:
+                    if re.search(r"\b" + var + r"\s*=[^=]", nxt):
+                        break
+                    for k in re.finditer(r"\b" + var + r"\s*&\s*(\([^()]*\)|0x[0-9A-Fa-f]+|\w+)", nxt):
+                        v = re.sub(r"\b([A-Za-z_]\w*)\b", lambda x: str(consts.get(x.group(1), x.group(1))), k.group(1))
+                        try:
+                            used |= int(eval(v, {}))
+                        except Exception:
+                            pass
+            if not used:
+                continue
+            mod = module_of.get(title, "")
+            if title in first_ro and re.match(r"[a-z_0-9]+$", name) and (mod, name) in driven:
+                key = (mod, name)
+            else:
+                key = (mod, (addr - first_ro.get(title, addr)) // 4 if title in first_ro else None)
+            for k2 in list(driven):
+                if k2[1] == key[1] and k2[0].startswith(mod.split("_")[0]) and key not in driven:
+                    key = k2
+            mask = driven.get(key)
+            where = f"{f.relative_to(Path(up))}:{i + 1}"
+            rows.append(f"  {where:38s} `{name}` ({title}) host bits 0x{used:08X}; RTL can drive "
+                        + (f"0x{mask:08X}" if mask is not None else "?"))
+            if mask is not None:
+                n_judged += 1
+                if used & ~mask:
+                    rv = (str(f.relative_to(Path(up))), f"{name}@{title}") in reviewed
+                    n_rev += rv
+                    if not rv:
+                        flagged.append(f"  {where} `{name}`: host tests 0x{used & ~mask:08X}, RTL always drives 0 there")
+    print(f"host register reads with a bit test: {len(rows)}; judged against RTL stat_reg assignments: "
+          f"{n_judged}; testing bits the RTL never drives: {len(flagged) + n_rev} "
+          f"({n_rev} reviewed by hand, tools/reviewed.txt)")
+    print("\n".join(flagged))
+    if "--table" in argv:
+        print("\n".join(rows))
+    return 1 if flagged else 0
+
 
 def main():
     argv = sys.argv[1:]
@@ -209,6 +367,8 @@ def main():
         return 2
     if "--bits" in argv:
         return check_bits(Path(argv[0]), argv)
+    if "--reads" in argv:
+        return check_reads(Path(argv[0]), argv)
     rows, missing, bad = host_rows(argv[0])
     print(f"[RESULT] {len(rows)} host address constants, {len(rows) - len(missing)} found in the RTL index")
     for f, n, addr, hit in rows:

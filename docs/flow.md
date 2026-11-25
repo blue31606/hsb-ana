@@ -109,7 +109,7 @@ host 埠 `i` 的 MAC = EEPROM MAC + `i`。
 | 9 | `vp + DP_PAGE_LSB / MSB` | frame buffer 起點的低 / 高 32 bit | `roce_buf_start`（page）、`roce_buf_fixed_msb` |
 | 10 | `vp + DP_PAGE_INC` | `PAGES(page_size)` | 每個 buffer 的間距 |
 | 11 | `vp + DP_MAX_BUFF` | `pages − 1` | 起始指標 0、結束指標 `pages − 1`：環狀 buffer |
-| 12 | `hif + DP_VP_MASK` | `|= vp_mask` | 開始服務這個 VP |
+| 12 | `hif + DP_VP_MASK` | `\|= vp_mask` | 開始服務這個 VP |
 
 host 端的檢查：`frame_memory` 與 `page_size` 必須 128 byte 對齊；`page_size ≥ round_up(frame_size, 128) + 128`（frame + metadata）；`pages ≤ 4096`；最高位址的 page 編號要放得進 32 bit。
 
@@ -172,6 +172,6 @@ RDMA WRITE 由 NIC 直接寫進 GPU 或 host 記憶體，CPU 不參與。WRITE w
 
 ## 注意事項
 
-1. RTL 的 buffer 位址計算是 26 bit page（33 bit byte 位址），`VA[63:33]` 固定取 `DP_PAGE_MSB[31:1]`。所以整個 buffer 環必須落在同一個 8 GB 對齊區間內，跨過 8 GB 邊界時 `VA[32:0]` 會回捲（R + X）：RTL 的 `roce_buf_addr = roce_buf_start + roce_buf_offset` 是 26-bit page 運算（[dp_pkt_top.sv#L1012–L1013](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L1012-L1013)），`roce_addr[63:33]` 固定取 `roce_buf_fixed_msb[31:1]`（[L1105–L1106](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L1105-L1106)）；host 的 `configure_roce()` 只檢查 `PAGES(frame_memory + page_size × pages)` 放得進 32 bit（[data_channel.cpp#L272–L275](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/data_channel.cpp#L272-L275)），沒有檢查 8 GB 邊界，`frame_msb = frame_memory >> 32` 直接寫入（[#L282–L289](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/data_channel.cpp#L282-L289)）。是否真的跨界取決於執行時 buffer 配置到的位址。
+1. RTL 的 buffer 位址計算是 26 bit page（33 bit byte 位址），`VA[63:33]` 固定取 `DP_PAGE_MSB[31:1]`。所以整個 buffer 環必須落在同一個 8 GB 對齊區間內，跨過 8 GB 邊界時 `VA[32:0]` 會回捲（R + X）：RTL 的 `roce_buf_addr = roce_buf_start + roce_buf_offset` 是 26-bit page 運算（[dp_pkt_top.sv#L1012–L1013](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L1012-L1013)），`roce_addr[63:33]` 固定取 `roce_buf_fixed_msb[31:1]`（[L1105–L1106](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L1105-L1106)）；host 的 `configure_roce()` 只檢查 `PAGES(frame_memory + page_size × pages)` 放得進 32 bit（[data_channel.cpp#L272–L275](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/data_channel.cpp#L272-L275)），沒有檢查 8 GB 邊界，`frame_msb = frame_memory >> 32` 直接寫入（[#L282–L289](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/data_channel.cpp#L282-L289)）。是否真的跨界取決於執行時 buffer 配置到的位址。（[DP-12](issues.md#data-plane-與封包處理)）
 2. host 預設 MTU 是 1500（`DEFAULT_MTU`），即使板級 `HOST_MTU = 4096`。要用 jumbo frame 必須在 enumeration metadata 指定 `mtu`。
 3. 步驟 5 的設定寫入期間 VP 已從 `vp_mask` 移除，但 VP FIFO 中殘留的資料仍在；若感測器還在送，重新啟用後第一個 frame 可能從中間開始（推斷）。

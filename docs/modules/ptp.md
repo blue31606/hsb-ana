@@ -246,13 +246,13 @@ host 軟體佐證：`FPGA_PTP_CTRL = 0x104`、`FPGA_PTP_PROFILE = 0x108`、`FPGA
 
 ## 注意事項
 
-1. `dpll.sv` 註解寫 G1 = 1/2、G2 = 1/4096，但增益其實由暫存器決定，預設都是右移 2（1/4）。
-2. `ptp_ctrl_pcp` 與 `i_enable` 沒有作用。PTP TX 不帶 VLAN，`ptp_pcp` 可能是預留給 VLAN 化 PTP 的。
-3. offset 只取 24 bit，超過約 ±8.4 ms 的偏移會回捲。正常運作依賴「3 個 PPS 沒收到 Sync 就重新 latch」的機制。
-4. E2E 的 mean delay 公式用的是最近一次 Sync 的 `ofm_no_dly`（`dly_ms <= ofm_no_dly`）。Delay_Resp 與 Delay_Req 有 sequenceId 配對，但 Delay 量測與「哪一個 Sync」之間沒有配對，靠時間先後。
+1. `dpll.sv` 註解寫 G1 = 1/2、G2 = 1/4096，但增益其實由暫存器決定，預設都是右移 2（1/4）。（[NT-7](../issues.md#註解與死碼不影響功能)）
+2. `ptp_ctrl_pcp` 與 `i_enable` 沒有作用。PTP TX 不帶 VLAN，`ptp_pcp` 可能是預留給 VLAN 化 PTP 的。（[NT-7](../issues.md#註解與死碼不影響功能)）
+3. offset 只取 24 bit，超過約 ±8.4 ms 的偏移會回捲。正常運作依賴「3 個 PPS 沒收到 Sync 就重新 latch」的機制。（[PT-3](../issues.md#ptp-與時間)）
+4. E2E 的 mean delay 公式用的是最近一次 Sync 的 `ofm_no_dly`（`dly_ms <= ofm_no_dly`）。Delay_Resp 與 Delay_Req 有 sequenceId 配對，但 Delay 量測與「哪一個 Sync」之間沒有配對，靠時間先後。（[PT-5](../issues.md#ptp-與時間)）
 5. 只有 host 埠 0 參與 PTP。
-6. 沒有 BMCA、忽略 Announce：網路上有多個 master 時，HSB 會被不同 master 的 Sync 輪流拉動。
-7. correctionField 只用低 24 bit，運算 mod 2²⁴：負值處理正確，但 offset / delay 加上 correctionField 後超出約 ±8.4 ms 會回捲。
-8. P2P / gPTP 不支援 one-step 的 Pdelay_Resp（t3、t4 不更新）。
-9. 秒只有 32 bit，2106 年回捲；`o_sec` 高 16 bit 固定 0。
+6. 沒有 BMCA、忽略 Announce：網路上有多個 master 時，HSB 會被不同 master 的 Sync 輪流拉動。（[PT-1](../issues.md#ptp-與時間)）
+7. correctionField 只用低 24 bit，運算 mod 2²⁴：負值處理正確，但 offset / delay 加上 correctionField 後超出約 ±8.4 ms 會回捲。（[PT-2](../issues.md#ptp-與時間)）
+8. P2P / gPTP 不支援 one-step 的 Pdelay_Resp（t3、t4 不更新）。（[PT-4](../issues.md#ptp-與時間)）
+9. 秒只有 32 bit，2106 年回捲；`o_sec` 高 16 bit 固定 0。（[PT-6](../issues.md#ptp-與時間)）
 10. DPLL 未啟用（`ptp_ctrl = 0`）時計時器從 0 自由執行，永遠不會與 master 對時。

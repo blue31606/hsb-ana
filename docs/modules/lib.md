@@ -35,7 +35,7 @@
 | | `dc_fifo_generic` | 398 | 雙時脈 FIFO，Gray code 指標，含 reset 握手 | `dc_fifo_stub` |
 | | `dc_fifo_stub` | 88 | `dc_fifo_generic` 的包裝，**預留給廠商替換成原生 FIFO** | `axis_buffer`、`axis_buffer_tx`、`streaming_cdc` |
 | | `reg_fifo` | 98 | 暫存器實作的小 FIFO | `ctrl_bus_evt_fsm`、`dp_pkt_ts`、`roce_icrc` |
-| | `str_fwd_fifo` | 125 | store-and-forward FIFO | **未使用** |
+| | `str_fwd_fifo` | 125 | store-and-forward FIFO | **未使用**（[NT-12](../issues.md#註解與死碼不影響功能)） |
 | CDC | [`data_sync`](#cdc-元件) | 62 | N 級同步器（每 bit 獨立） | 多處 |
 | | [`pulse_sync`](#cdc-元件) | 100 | 單拍脈衝跨時脈（toggle 方式） | `packetizer_top`、`ptp_top`、`virtual_port` 等 |
 | | [`reg_cdc`](#cdc-元件) | 88 | 多 bit 暫存器跨時脈（4 相握手） | `s_apb_reg`、`ptp_dly`、`bootp` 等 |
@@ -143,7 +143,7 @@
 - 握手進行中（`a_val_qq = 1`）又來一次 `i_a_val`：`a_reg_q` 被更新，但不會再發起握手，B 端保留舊值，直到下一次 `i_a_val`。
 - 請求剛放下、但 ack 還沒同步回來（`b2a_ack_sync[1] = 1`）時來一次 `i_a_val`：`a_reg_qq` 被更新，但請求被 ack 擋住沒有拉高，同樣不會送到 B 端。
 
-**在 `s_apb_reg` 中的影響（R + M）。** `s_apb_reg` 每個控制暫存器各有一個 `reg_cdc`，但 `i_a_val` 都接同一個 `reg_wdval`（[s_apb_reg.sv#L94](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L94)、[#L173–L185](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L173-L185)），它在**同一個區塊的任何一個暫存器**被寫入時都會產生脈衝。所以第一次寫入啟動了所有暫存器的握手，握手結束前第二次寫入**另一個**暫存器，那個暫存器的新值也不會送出（直到下一次寫入）。遺失與否取決於兩次寫入的間隔和兩端時脈比：
+**在 `s_apb_reg` 中的影響（R + M）。** `s_apb_reg` 每個控制暫存器各有一個 `reg_cdc`，但 `i_a_val` 都接同一個 `reg_wdval`（[s_apb_reg.sv#L94](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L94)、[#L173–L185](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/s_apb_reg.sv#L173-L185)），它在**同一個區塊的任何一個暫存器**被寫入時都會產生脈衝。所以第一次寫入啟動了所有暫存器的握手，握手結束前第二次寫入**另一個**暫存器，那個暫存器的新值也不會送出（直到下一次寫入）。遺失與否取決於兩次寫入的間隔和兩端時脈比：（[CP-6](../issues.md#control-planeecbbootpls-路徑)）
 
 - `apb_switch` 每次 transaction 後進 `DELAY` 數到 10（[apb_switch.sv#L168](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/lib_apb/apb_switch.sv#L168)），加上 `REQUESTED`、`penable` 與 `s_apb_reg` 兩級暫存的 `pready`，同一個 master 的連續寫入至少相隔 16 個 APB 時脈。
 - [`tools/model/reg_cdc_model.py`](../../tools/model/reg_cdc_model.py) 照 `reg_cdc` 逐暫存器模擬兩個時脈、掃過 B 端相位：模組時脈 ≥ 8 倍 APB 時需 ≥ 6 拍、相同頻率需 ≥ 10 拍、APB 為模組時脈 2 倍時需 ≥ 16 拍；**模組時脈低於 APB 時脈約 0.48 倍時，16 拍的間隔不夠，會遺失**。
@@ -160,7 +160,7 @@
 | 來源較快 | 8-bit 相位累加器把寫入速率壓到目的端頻率的 99 % 以下，例如 PTP 100.45 MHz → APB 19.53 MHz：`PHASE_INCREMENT = 49`，寫入速率 = 49/256 × 100.45 ≈ 19.23 MHz |
 | 起動 | 目的端離開 reset 後的 `dst_ready` 同步回來源端才開始寫 |
 
-因為寫入速率永遠不超過讀出速率，FIFO 幾乎保持空的。一筆值從寫入到出現在 `o_dst_data` 的路徑（R）：來源端寫入同一拍更新 `wr_gray` → 目的端兩級同步（`SYNC_DEPTH = 2`）→ `rdcount_nxt` 不為 0，下一拍 `empty` 清除（[dc_fifo_generic.sv#L296–L302](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L296-L302)）→ `fifo_rd_en = !fifo_empty`（[streaming_cdc.sv#L142](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/streaming_cdc.sv#L142)）→ 下一拍 `dout` 與 `dval`。共 3 個完整目的端時脈，加上寫入到第一個目的端邊緣的 0–1 個時脈，也就是 **3–4 個目的端時脈**；此外 `o_dst_data` 在兩次更新之間保持不變，來源較慢時最多再舊 1 個來源時脈（來源較快、經相位累加器降速時最多再舊 ⌈256 / `PHASE_INCREMENT`⌉ 個來源時脈）。
+因為寫入速率永遠不超過讀出速率，FIFO 幾乎保持空的。一筆值從寫入到出現在 `o_dst_data` 的路徑（R）：來源端寫入同一拍更新 `wr_gray` → 目的端兩級同步（`SYNC_DEPTH = 2`）→ `rdcount_nxt` 不為 0，下一拍 `empty` 清除（[dc_fifo_generic.sv#L296–L302](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/dc_fifo_generic.sv#L296-L302)）→ `fifo_rd_en = !fifo_empty`（[streaming_cdc.sv#L142](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/misc/streaming_cdc.sv#L142)）→ 下一拍 `dout` 與 `dval`。共 3 個完整目的端時脈，加上寫入到第一個目的端邊緣的 0–1 個時脈，也就是 **3–4 個目的端時脈**；此外 `o_dst_data` 在兩次更新之間保持不變，來源較慢時最多再舊 1 個來源時脈（來源較快、經相位累加器降速時最多再舊 ⌈256 / `PHASE_INCREMENT`⌉ 個來源時脈）。（[PT-7](../issues.md#ptp-與時間)）
 
 | 板級 | 目的端（HIF） | CDC 固定延遲 | 加上取樣保持（PTP 時脈） |
 |---|---|---|---|
@@ -212,4 +212,4 @@ RTL 沒有補償這段延遲；`dp_pkt_top` 的 metadata 與 CoE 時間戳都取
 | `ctrl_bus_evt_int` 的 24-bit `timeout` 等設定 | `data_sync` | 準靜態設定，改寫瞬間可能短暫看到混合值 |
 | `init_done`、EEPROM IP valid | `data_sync` | ✓ 單 bit；IP 本身只同步 valid，資料視為靜態 |
 
-[`tools/scan_cdc.py`](../../tools/scan_cdc.py) 在每個檔案內找「A 時脈的暫存器（含經過 `assign` / `always_comb` 的組合邏輯）被 B 時脈的 `always_ff` 讀取」：115 個檔案中有 8 個檔案內部有跨時脈，共 23 處；5 處是同步器或準靜態設定（依名稱判斷），其餘 18 處逐一讀過（[`tools/reviewed.txt`](../../tools/reviewed.txt)），全部落在上表或屬於 RAM / FIFO 的記憶體陣列，沒有新的問題（R）。跨模組（經由埠）的跨時脈不在這個掃描範圍內，仍以上表為準。
+[`tools/scan_cdc.py`](../../tools/scan_cdc.py) 在每個檔案內找「A 時脈的暫存器（含經過 `assign` / `always_comb` 的組合邏輯）被 B 時脈的 `always_ff` 讀取」：115 個檔案中有 8 個檔案內部有跨時脈，共 23 處；5 處是同步器或準靜態設定（依名稱判斷），其餘 18 處逐一讀過（[`tools/reviewed.txt`](../../tools/reviewed.txt)），全部落在上表或屬於 RAM / FIFO 的記憶體陣列，沒有新的問題（R）。跨模組（經由埠）的跨時脈由 [`tools/scan_cdc_ports.py`](../../tools/scan_cdc_ports.py) 檢查：它由下而上為每個模組整理「哪些輸入是時脈、每個輸出在哪個時脈上暫存、每個輸入被哪個時脈取樣」，再在父模組比對實例輸入的來源時脈與取樣時脈，同步器、雙時脈 FIFO 與 `s_apb_reg` / `s_apb_ram` 不算。結果 13 處：7 處是 EEPROM 提供、`init_done` 前就固定的 MAC / IP / enumeration 資料（上表最後一列）；6 處是 CPNX100 與 NV MIPI 板級的 I2C / SPI 輸入在 `hif_clk` 上同步、卻由 APB 時脈的控制器取樣（[PE-17](../issues.md#周邊)）。這個掃描也找出 `event_vec` 與 `hsb_stat` 雖然跨時脈，但在 `ctrl_bus_evt_int`、`bootp` 內都有 `data_sync`（R）。

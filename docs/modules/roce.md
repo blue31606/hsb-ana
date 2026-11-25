@@ -47,8 +47,8 @@ RoCEv2 的 ICRC 是 CRC-32，計算範圍從 IP header 開始，前面加上一�
 
 ## 注意事項
 
-1. `roce_icrc` 不是通用的 ICRC 模組：最後一拍的有效 byte 數只支援上表幾種。改變 header 長度（例如加入 GRH 或其他 extension header）或讓 payload 不是整數拍時，ICRC 會算錯且不會報錯。
-2. 新的資料寬度需要重新產生 `lfsr_hc`，否則沒有方程式的寬度會靜默地不計算 CRC。
+1. `roce_icrc` 不是通用的 ICRC 模組：最後一拍的有效 byte 數只支援上表幾種。改變 header 長度（例如加入 GRH 或其他 extension header）或讓 payload 不是整數拍時，ICRC 會算錯且不會報錯。（[DP-14](../issues.md#data-plane-與封包處理)）
+2. 新的資料寬度需要重新產生 `lfsr_hc`，否則沒有方程式的寬度會靜默地不計算 CRC。（[DP-14](../issues.md#data-plane-與封包處理)）
 
 ## `roce_ack`
 

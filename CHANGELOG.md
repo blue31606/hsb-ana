@@ -14,7 +14,8 @@
 | v7.1 | `804ebda` | 剩餘推斷項目追完 RTL（DP-6、DP-10、CP-1、CP-5、TX-6、BR-2、PE-5、PE-6 等升為 R 或 R + X）；新增 `dp_pkt_top`、UART、`roce_ack` 模型，Data Plane 封包間隔改由模型計算並更正「兩埠無法同時達到線速」，新增 DP-16；RC 相關項目標為「啟用時」；`rx_parser` 模型改為精確並產生時序圖；新增 S13（DP-8） |
 | v7.1.1 | `3cc940b` | 以讀碼與文字解析補強：DP-12、CP-6、PT-7、PE-10 升為 R / R + X / R + M；新增原始碼連結檢查與 host 位址常數比對；暫存器索引補上 UART 遺漏的 3 個暫存器與 `delayed_io`、`i2s_top` 兩個區塊；找到 host 讀 I2S 狀態的位址與 RTL 不一致（PE-15） |
 | v7.1.2 | `e1a8ac5` | 再以文字解析補強：新增埠空接掃描（找到 Bridge `ptp_del_req_buffer` 只依 host 0 讀出，併入 BR-7）、文件涵蓋率與行數檢查、板級設定表自動產生（補 9 列）、host 寫入值與 RTL 位元比對、檔案內跨時脈粗篩；找到事件序列逾時的單位只對 19.53 MHz APB 成立（PE-16）；更正 `axis_pkg` 描述 |
-| v7.2 | 目前版本 | 精簡：VERIFICATION 不再重複問題清單；移除內文的版本註記（歷史只留在本檔）；README 的工具說明移到 [tools/README](tools/README.md)，新增 `tools/check_all.py` 一次跑完所有檢查；`check_host_bits.py` 併入 `check_host_regs.py --bits`；三份人工確認清單合為 `tools/reviewed.txt`；`regmap.md` 併入 [完整暫存器索引](docs/registers/all-registers.md)（名稱連到原始碼、註解位址不一致標 ⚠️），`gen_regmap.py` 併入 `gen_allregs.py` |
+| v7.2 | `0e5f8ad` | 精簡：VERIFICATION 不再重複問題清單；移除內文的版本註記（歷史只留在本檔）；README 的工具說明移到 [tools/README](tools/README.md)，新增 `tools/check_all.py` 一次跑完所有檢查；`check_host_bits.py` 併入 `check_host_regs.py --bits`；三份人工確認清單合為 `tools/reviewed.txt`；`regmap.md` 併入 [完整暫存器索引](docs/registers/all-registers.md)（名稱連到原始碼、註解位址不一致標 ⚠️），`gen_regmap.py` 併入 `gen_allregs.py` |
+| v7.3 | 目前版本 | 文字解析再補強：問題編號與模組文件雙向連結並自動檢查；暫存器索引加上 reset 值（取自 `RST_VAL`，與模組文件 22 處一致）；host 讀取位元比對，找到 host 檢查固定為 0 的 I2C `status[1]`（NT-15）；host 未存取的 63 個暫存器分類；模組之間的跨時脈掃描，找到板級 I2C / SPI 輸入同步在錯誤時脈（PE-17）；`check_all.py` 比對文件中寫死的數字。更正：問題統計（v7.2 寫 52 項，實為 64 項，計數時漏掉「中（啟用時）」等等級）；6 個表格儲存格的 code 內有未跳脫的 `\|`，在 GitHub 上會切錯欄；PE-5 的觸發條件補上 host 只在相機驅動中設定 I2C 時脈 |
 
 ## 結論更正
 

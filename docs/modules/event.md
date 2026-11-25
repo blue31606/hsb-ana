@@ -127,5 +127,5 @@ POLL 每次重讀之間有一段由計數器 `cnt` 決定的間隔。
 
 ## 注意事項
 
-1. `HOLOLINK_top` 中 `event_vec` 的 bit 2、3 是 `event_internal_int = 0`，實際值在 `ctrl_bus_evt_int` 內被取代。
+1. `HOLOLINK_top` 中 `event_vec` 的 bit 2、3 是 `event_internal_int = 0`，實際值在 `ctrl_bus_evt_int` 內被取代。（[NT-14](../issues.md#註解與死碼不影響功能)）
 2. 中斷封包對每個 host 埠都送一份，目的位址相同。

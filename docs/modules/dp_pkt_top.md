@@ -375,11 +375,11 @@ Frame CRC（[L207–L249](https://github.com/nvidia-holoscan/holoscan-sensor-bri
 
 ## 注意事項
 
-1. `dp_pkt_len` 的 reset 值 `0x5CE` 只有低 8 bit 被使用（`0xCE` = 206 page = 26 KB），超過 MTU，必須由軟體設定。host 寫 `PAGES(payload_size)`。
-2. `dp_pkt` 不檢查 VP 的 `tvalid`。VP 在封包中途斷流（違反 §1 的契約）時，會把無效資料當成 payload 送出且不報錯（R；`virtual_port` 的閘控在正常情況下避免這件事）。
-3. `ROCE_WR_IMM` 狀態沒有使用；RTL 檔頭的設定 RAM 註解是舊配置。
+1. `dp_pkt_len` 的 reset 值 `0x5CE` 只有低 8 bit 被使用（`0xCE` = 206 page = 26 KB），超過 MTU，必須由軟體設定。host 寫 `PAGES(payload_size)`。（[NT-6](../issues.md#註解與死碼不影響功能)）
+2. `dp_pkt` 不檢查 VP 的 `tvalid`。VP 在封包中途斷流（違反 §1 的契約）時，會把無效資料當成 payload 送出且不報錯（R；`virtual_port` 的閘控在正常情況下避免這件事）。（[DP-9](../issues.md#data-plane-與封包處理)）
+3. `ROCE_WR_IMM` 狀態沒有使用；RTL 檔頭的設定 RAM 註解是舊配置。（[NT-6](../issues.md#註解與死碼不影響功能)）
 4. CoE 的 timestamp 是封包送出時間，不是 SOF 時間；SOF 時間只出現在 metadata。
 5. CoE 的 `stream_id`、ACF msg type 等是常數，與 IEEE 1722b 規格的逐欄對照不在本文件範圍。
-6. `dp_pkt_ts` 的每 VP 4 筆 RAM 用 2-bit 讀寫指標（[dp_pkt_ts.sv#L144–L169](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_ts.sv#L144-L169)），沒有滿的檢查。一個 VP 累積第 5 個「已 SOF、未送 metadata」的 frame 時，寫指標繞回覆寫最舊的一筆，讀到的是 4 個 frame 之後的時間戳；之後的 frame 不受影響。前端 `reg_fifo` 滿時 `wr_en = wr & ~full`，SOF 直接遺失（R；正常情況下 metadata 優先，不會累積）。
-7. 同一個 VP 被多個 host 的 `vp_mask` 選中時，`hif_gnt_idx` 取編號最大的 host，其他 host 收不到（R）。
+6. `dp_pkt_ts` 的每 VP 4 筆 RAM 用 2-bit 讀寫指標（[dp_pkt_ts.sv#L144–L169](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_ts.sv#L144-L169)），沒有滿的檢查。一個 VP 累積第 5 個「已 SOF、未送 metadata」的 frame 時，寫指標繞回覆寫最舊的一筆，讀到的是 4 個 frame 之後的時間戳；之後的 frame 不受影響。前端 `reg_fifo` 滿時 `wr_en = wr & ~full`，SOF 直接遺失（R；正常情況下 metadata 優先，不會累積）。（[DP-10](../issues.md#data-plane-與封包處理)）
+7. 同一個 VP 被多個 host 的 `vp_mask` 選中時，`hif_gnt_idx` 取編號最大的 host，其他 host 收不到（R）。（[DP-11](../issues.md#data-plane-與封包處理)）
 8. **單一 VP 時 VP 公平性遮罩會振盪。** `hif_sif_mask`、`hif_sif_unserved`、`hif_sif_served`（[L668](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L668)、[L687–L688](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/fpga/nv_hsb_ip/dp_pkt/dp_pkt_top.sv#L687-L688)）在只有一個 VP、`sif_gnt_r` 一直指向它時是三級反相的環，以 6 拍為週期遮住 3 拍。`hif_not_busy_soon` 拉高時剛好被遮住，下一個封包的 FSM 最多晚 3 拍啟動，封包間隔從 4 拍變成最多 7 拍（R + M，[performance §3](../performance.md#3-hsb-內部的封包間隔逐拍模型)、DP-16）。

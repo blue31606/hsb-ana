@@ -243,11 +243,11 @@ IP 來源：reset 時是預設 `192.168.0.2 + k`；之後**最後發生的事件
 
 ## 注意事項
 
-1. `regmap_pkg.sv` 的 `ecb_addr_lsb` / `ecb_addr_msb` 註解位址寫反（[all-registers.md](../registers/all-registers.md#註解與程式不一致的項目)）。
+1. `regmap_pkg.sv` 的 `ecb_addr_lsb` / `ecb_addr_msb` 註解位址寫反（[all-registers.md](../registers/all-registers.md#註解與程式不一致的項目)）。（[NT-2](../issues.md#註解與死碼不影響功能)）
 2. `bootp` 的 IP 變數名為 `ciaddr`：它是送出 BOOTP request 時填在 ciaddr 欄位的「目前 IP」，收到 reply 時從 `yiaddr` 更新。命名與用途一致，不是錯誤。
 3. LS 路徑吞吐量 = 1 byte / HIF 時脈。
-4. ECB 寫入命令預設沒有回應，host 需要確認寫入時必須設 `ACK_REQUEST`。
-5. 封包在 pair 中途結束時仍會執行一次不完整的 APB 存取。具體情境（R + X，未模擬）：enumeration 預設 `block_enable = 1`（`enumerator.cpp`），此時 host 的 `write_uint32(address, value)` 也包成單組 `WriteData`，一律用 `WR_BLOCK`（[hololink.cpp#L562–L580](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/hololink.cpp#L562-L580)），所以**每一次單一暫存器寫入**都會觸發；只帶 1 組時 UDP payload 14 byte，frame 56 byte，被 MAC 補到 60 byte。多出的 4 byte 0 會被當成第二組的 addr，`tlast` 隨即到來，FSM 以 `addr = 0x0000_0000`、`data = 上一組的資料`（`cmd_dout` 只在 IDLE / FLUSH 清除）執行一次寫入，也就是寫到 `glb_scratch`；回應也會多一組 pair。前提是板級 MAC 不移除補齊 byte，且封包沒有 VLAN。
-6. 任何送到 UDP 12268、dest MAC 為本機的 BOOTP reply 都會改變 HSB 的 IP，沒有 xid / chaddr 驗證。
-7. `cmd_dout` 跨時脈沒有同步器，依賴「資料先固定、控制後同步」的時序；需要合成約束。
-8. `rx_ls_parser` 是所有 host 埠共用的單一路徑：一個長的 `WR_BLOCK` 在執行期間（每組都要 APB 往返）會擋住其他 host 埠的 ARP、BOOTP、Ping；輸出緩衝也是共用的，某個 host 埠的 `eth_pkt` 不收時會擋住其他埠的回應（R：輸入 `u_inp_axis_arb` 以封包為單位 round-robin，各引擎與輸出仲裁 `u_out_axis_arb` 都只有一份）。
+4. ECB 寫入命令預設沒有回應，host 需要確認寫入時必須設 `ACK_REQUEST`。（[CP-2](../issues.md#control-planeecbbootpls-路徑)）
+5. 封包在 pair 中途結束時仍會執行一次不完整的 APB 存取。具體情境（R + X，未模擬）：enumeration 預設 `block_enable = 1`（`enumerator.cpp`），此時 host 的 `write_uint32(address, value)` 也包成單組 `WriteData`，一律用 `WR_BLOCK`（[hololink.cpp#L562–L580](https://github.com/nvidia-holoscan/holoscan-sensor-bridge/blob/41cecaa81ab906a55e7ec22e5e6989f7e602a4c8/src/hololink/core/hololink.cpp#L562-L580)），所以**每一次單一暫存器寫入**都會觸發；只帶 1 組時 UDP payload 14 byte，frame 56 byte，被 MAC 補到 60 byte。多出的 4 byte 0 會被當成第二組的 addr，`tlast` 隨即到來，FSM 以 `addr = 0x0000_0000`、`data = 上一組的資料`（`cmd_dout` 只在 IDLE / FLUSH 清除）執行一次寫入，也就是寫到 `glb_scratch`；回應也會多一組 pair。前提是板級 MAC 不移除補齊 byte，且封包沒有 VLAN。（[CP-1](../issues.md#control-planeecbbootpls-路徑)）
+6. 任何送到 UDP 12268、dest MAC 為本機的 BOOTP reply 都會改變 HSB 的 IP，沒有 xid / chaddr 驗證。（[CP-4](../issues.md#control-planeecbbootpls-路徑)）
+7. `cmd_dout` 跨時脈沒有同步器，依賴「資料先固定、控制後同步」的時序；需要合成約束。（[CP-3](../issues.md#control-planeecbbootpls-路徑)）
+8. `rx_ls_parser` 是所有 host 埠共用的單一路徑：一個長的 `WR_BLOCK` 在執行期間（每組都要 APB 往返）會擋住其他 host 埠的 ARP、BOOTP、Ping；輸出緩衝也是共用的，某個 host 埠的 `eth_pkt` 不收時會擋住其他埠的回應（R：輸入 `u_inp_axis_arb` 以封包為單位 round-robin，各引擎與輸出仲裁 `u_out_axis_arb` 都只有一份）。（[CP-5](../issues.md#control-planeecbbootpls-路徑)）

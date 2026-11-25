@@ -93,7 +93,7 @@ for (int j=0; j<NUM_HOST; j=j+1) begin
 
 ## 注意事項
 
-1. Header 長度寫死 54 byte。RC WRITE 封包在 BTH 後還有 16 byte RETH，這裡不會去掉。`ENABLE_ROCE_ACK` 時 `rx_parser` 會接受 RC WRITE，RETH 會留在送給感測器的資料裡（R + X：host 軟體送往 HSB 的只有 UC SEND，板級也都沒有定義 `SIF_TX_ROCE_RC_ENABLE`，所以只有第三方 RC requester 會觸發）。
-2. 感測器選擇的位元範圍和 `roce_ack` 不同，見 [roce_ack 注意事項 1](roce_ack.md#注意事項)。
-3. 整條路徑沒有 `tready`。下游只能靠 `tx_stream_buffer` 的 FIFO 吸收，滿了就遺失資料。
+1. Header 長度寫死 54 byte。RC WRITE 封包在 BTH 後還有 16 byte RETH，這裡不會去掉。`ENABLE_ROCE_ACK` 時 `rx_parser` 會接受 RC WRITE，RETH 會留在送給感測器的資料裡（R + X：host 軟體送往 HSB 的只有 UC SEND，板級也都沒有定義 `SIF_TX_ROCE_RC_ENABLE`，所以只有第三方 RC requester 會觸發）。（[TX-6](../issues.md#host--感測器sif-tx與-roce-ack)）
+2. 感測器選擇的位元範圍和 `roce_ack` 不同，見 [roce_ack 注意事項 1](roce_ack.md#注意事項)。（[TX-5](../issues.md#host--感測器sif-tx與-roce-ack)）
+3. 整條路徑沒有 `tready`。下游只能靠 `tx_stream_buffer` 的 FIFO 吸收，滿了就遺失資料。（[TX-7](../issues.md#host--感測器sif-tx與-roce-ack)）
 4. 輸出只保留 Ethernet 封包邊界（`tlast`）。frame、line 等資訊必須在 payload 裡。

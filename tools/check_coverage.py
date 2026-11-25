@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Documentation coverage: which RTL files and modules under fpga/nv_hsb_ip are never mentioned.
 
+Also checks the 行數 (line count) cells of doc tables against the sources, and the Reset
+cells of module register tables against docs/registers/all-registers.md (RTL RST_VAL), and
+that every Markdown table row has as many cells as its header the way GitHub splits them.
+
 For every .sv / .v file under fpga/nv_hsb_ip (simple_tb excluded) and every module or package it defines,
 look for the file name (in a link or in text) or the module name (as a word) anywhere in
 docs/ and README.md. Files and modules that appear nowhere are listed by directory.
@@ -87,7 +91,58 @@ def main():
                                f"{size[names[0]][1]} has {size[names[0]][0]}")
     print(f"\nline-count cells checked: {n_rows}; mismatches: {len(bad)}")
     print("\n".join(bad))
-    return 1 if (miss_file or bad) else 0
+
+    # Reset cells in module register tables against all-registers.md (RTL RST_VAL).
+    gen = {}
+    for ln in (ROOT / "docs/registers/all-registers.md").read_text().split("\n"):
+        m = re.match(r"\| `0x[0-9A-F_]+` \| \[?`([^`]+)`(?:\]\([^)]*\))? \| \S+ \| ([^|]*)\|", ln)
+        v = m and re.search(r"0x([0-9A-F]+)", m.group(2))
+        if v:
+            gen.setdefault(m.group(1), int(v.group(1), 16))
+    n_reset, bad_reset = 0, []
+    for doc in sorted((ROOT / "docs/modules").glob("*.md")):
+        hdr = None
+        for i, ln in enumerate(doc.read_text().split("\n"), 1):
+            if not ln.startswith("|"):
+                hdr = None
+                continue
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            low = [c.lower() for c in cells]
+            if "reset" in low or "reset 值" in low:
+                hdr = low.index("reset") if "reset" in low else low.index("reset 值")
+                continue
+            if hdr is None or ln.startswith("|---") or len(cells) <= hdr:
+                continue
+            names = [x for x in re.findall(r"`(\w+)`", " ".join(cells[:hdr])) if x in gen]
+            val = re.search(r"0x([0-9A-Fa-f_]+)|^(\d[\d,]*)$", cells[hdr].replace("`", ""))
+            if not names or not val:
+                continue
+            d = int(val.group(1).replace("_", ""), 16) if val.group(1) else int(val.group(2).replace(",", ""))
+            n_reset += 1
+            if d != gen[names[0]]:
+                bad_reset.append(f"  {doc.relative_to(ROOT)}:{i} {names[0]} doc {cells[hdr]}, RTL 0x{gen[names[0]]:08X}")
+    print(f"\nreset cells checked against RST_VAL: {n_reset}; mismatches: {len(bad_reset)}")
+    print("\n".join(bad_reset))
+
+    # Table shape as GitHub renders it: an unescaped | splits a cell even inside `code`.
+    n_tab, bad_tab = 0, []
+    for doc in sorted(list(ROOT.rglob("*.md"))):
+        if ".git" in doc.parts:
+            continue
+        cols = None
+        for i, ln in enumerate(doc.read_text().split("\n"), 1):
+            if not ln.startswith("|"):
+                cols = None
+                continue
+            n = len(re.split(r"(?<!\\)\|", ln.strip().strip("|")))
+            if cols is None:
+                cols = n
+                n_tab += 1
+            elif n != cols:
+                bad_tab.append(f"  {doc.relative_to(ROOT)}:{i} {n} cells, header has {cols} (escape | as \\| inside code)")
+    print(f"\ntables checked: {n_tab}; rows with a different cell count: {len(bad_tab)}")
+    print("\n".join(bad_tab))
+    return 1 if (miss_file or bad or bad_reset or bad_tab) else 0
 
 
 if __name__ == "__main__":
